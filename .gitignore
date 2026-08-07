@@ -1,0 +1,2 @@
+# Build output. Cargo.lock is committed deliberately and is not ignored.
+/target

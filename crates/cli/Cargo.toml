@@ -1,0 +1,17 @@
+[package]
+name = "bremsweg-cli"
+description = "Argument parsing, file reading and result writing. No physics."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "bremsweg"
+path = "src/main.rs"
+
+[dependencies]
+bremsweg-core = { path = "../core" }
+
+[lints]
+workspace = true

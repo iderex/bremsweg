@@ -1,0 +1,15 @@
+[package]
+name = "bremsweg-core"
+description = "The transport physics. No input, no output, no file system."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+# This table stays empty, and tests/dependencies.rs refuses an entry that is not
+# on the allowlist written into that file. The boundary is what lets the whole
+# suite run with no display, no temporary directory and no elevated privilege.
+[dependencies]
+
+[lints]
+workspace = true
