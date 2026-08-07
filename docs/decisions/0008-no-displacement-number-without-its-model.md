@@ -19,9 +19,10 @@ The same irradiation yields different displacement numbers depending on which
 model produced them, and the difference is not a rounding matter. The
 publication that introduced the corrected measures states it directly:
 
-    the number of radiation defects produced in energetic cascades in metals is
-    only ~1/3 the NRT-dpa prediction, while the number of atoms involved in
-    atomic mixing is about a factor of 30 larger than the dpa value
+    In particular, the number of radiation defects produced in energetic
+    cascades in metals is only ~1/3 the NRT-dpa prediction, while the number of
+    atoms involved in atomic mixing is about a factor of 30 larger than the dpa
+    value.
 
 Kai Nordlund et al., Improving atomic displacement and replacement calculations
 with physically realistic damage models, Nature Communications volume 9, article
