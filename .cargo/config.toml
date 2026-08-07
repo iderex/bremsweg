@@ -1,0 +1,13 @@
+# Build settings that belong to the tree rather than to whoever is building it.
+
+# Two release builds of the same commit on this platform differed in nineteen
+# bytes without this line: the linker writes a timestamp into the PE header and
+# a fresh signature into the debug directory, and neither has anything to do
+# with the source. /Brepro replaces both with values derived from the input, so
+# a binary somebody was given can be checked against the source they read.
+#
+# The option belongs to the MSVC linker, so the setting is target specific. What
+# the equivalent question needs on the other platforms has not been measured
+# here and nothing in this file claims an answer for them.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-Clink-arg=/Brepro"]
