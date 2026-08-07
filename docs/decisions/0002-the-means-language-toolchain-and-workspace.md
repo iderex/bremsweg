@@ -12,7 +12,11 @@ dependency set is pinned by a lock file that is committed.
 
 The concrete values:
 
-Language: Rust, 2021 edition.
+Language: Rust, 2024 edition, with the workspace dependency resolver that
+edition selects. The newest edition is chosen because this is a tree with no
+history to migrate, so the migration cost that normally argues for an older
+edition is zero here, and an edition behind on the first commit is a migration
+somebody pays for later with no benefit taken in the meantime.
 
 Minimum and pinned version: 1.97.0. The pin lives in `rust-toolchain.toml` at
 the workspace root, and the minimum supported version recorded in the workspace
