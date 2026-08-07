@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/fit", "crates/cli"]
+
+# Shared by every crate in the workspace so a version, an edition or a minimum
+# toolchain is stated once. `rust-version` is the same number as the channel in
+# rust-toolchain.toml deliberately: two numbers that are allowed to differ are
+# two numbers nobody keeps in step.
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97.0"
+repository = "https://github.com/iderex/bremsweg"
+
+# No `license` field. The licence of this repository is undecided and is the
+# first entry in issue #1; a field here would answer it by accident.
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# The numeric core is where a silent conversion becomes a wrong answer that
+# looks like a right one, so the casts are denied rather than warned about.
+cast_possible_truncation = "deny"
+cast_precision_loss = "deny"
+cast_sign_loss = "deny"

@@ -1,0 +1,13 @@
+[package]
+name = "bremsweg-fit"
+description = "The stopping-power fit. Reads measurements, writes coefficients."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+bremsweg-core = { path = "../core" }
+
+[lints]
+workspace = true

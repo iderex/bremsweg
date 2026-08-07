@@ -1,0 +1,10 @@
+# The toolchain is pinned in the tree rather than described in a document, so a
+# fresh clone and the automated run build with the same compiler. Raising this
+# number is a change with an issue behind it.
+#
+# The same number appears as `rust-version` in the workspace manifest. Nothing
+# reads one against the other yet.
+[toolchain]
+channel = "1.97.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
