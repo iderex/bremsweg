@@ -1,0 +1,15 @@
+[package]
+name = "bremsweg-needs-hardware-network-or-time"
+description = "Tests that need particular hardware, the network, or more time than a per change run allows. Not run on every change."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+# Empty on purpose. A test that needs the network needs it because of the
+# service it talks to, not because of a crate, and the first dependency added
+# here is one somebody argued for in an issue.
+[dependencies]
+
+[lints]
+workspace = true

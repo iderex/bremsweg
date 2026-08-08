@@ -15,9 +15,13 @@ about the files beside it.
 
 That is the whole ordinary suite. It needs no display, no elevated privilege and
 no network, and any test that would need one of those does not belong in it.
-The second harness for tests that genuinely need hardware or the network is
-issue #22, and until it exists there is nowhere for such a test to go and none
-is in the tree.
+
+A test that genuinely needs particular hardware, the network, or more minutes
+than a per change run allows goes in `crates/needs-hardware-network-or-time`,
+which has its own README. Nothing runs that harness on a change and it is asked
+for by hand. The ordinary run above still compiles it and reports its tests as
+ignored; what the ordinary run does not yet do is say that the harness was not
+asked for and what asking would need, which is issue #15.
 
 ## Where a test lives
 
@@ -46,8 +50,10 @@ test belongs to and is what a test reading a tracked file starts from.
 write in, and it is the only place a test writes. Nothing is written to the
 system temporary directory, to the home directory or next to the source.
 
-No test in the tree writes anything today. The one test that reads a tracked
-file resolves it from `CARGO_MANIFEST_DIR`.
+One test in the tree writes, and it writes only there: the build comparison in
+`crates/needs-hardware-network-or-time` puts two target directories under
+`CARGO_TARGET_TMPDIR`. The one test that reads a tracked file resolves it from
+`CARGO_MANIFEST_DIR`.
 
 ## Fixtures
 
@@ -76,8 +82,14 @@ Marking it keeps it in the tree and out of the fast path. It is still run:
     cargo test --workspace -- --ignored
 
 A test marked this way because it needs particular hardware or the network is in
-the wrong place rather than merely slow, and it moves to the harness in #22 when
-that exists.
+the wrong place rather than merely slow, and it belongs in
+`crates/needs-hardware-network-or-time` instead.
+
+That command is therefore no longer the whole story, and the harness README says
+why. A test in the harness refuses rather than skips when what it needs was not
+declared, so running the line above with nothing declared turns those tests red.
+The route that runs them is in the harness README and it declares what the run
+may use.
 
 ## What a test asserts about a floating point number
 

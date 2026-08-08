@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/fit", "crates/cli"]
+members = [
+    "crates/core",
+    "crates/fit",
+    "crates/cli",
+    "crates/needs-hardware-network-or-time",
+]
 
 # Shared by every crate in the workspace so a version, an edition or a minimum
 # toolchain is stated once. `rust-version` is the same number as the channel in
