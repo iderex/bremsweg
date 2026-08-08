@@ -162,6 +162,13 @@ red, not in the sense that it stops a merge. The target requires thirteen
 contexts and this repository requires none. Nothing in this milestone owns that
 gap, and it is stated here rather than left for a reader to notice.
 
+Three entries below have moved since this section was verified, and the count of
+five above is the count at `67f2053` rather than the count today. `CodeQL` and
+`Analyze (actions)` are adopted and `Analyze (csharp)` is adapted, each carrying
+its own observation at the commit it was verified at. This paragraph exists
+because a section pinned to one commit goes on reading as current, and the
+entries are the authority rather than this summary.
+
 ## The checks
 
 ### DCO sign-off
@@ -305,9 +312,26 @@ Produced by `github-advanced-security` rather than by a job. It is the code
 scanning results check that gates on the findings the analysis uploaded, as
 distinct from the analysis jobs themselves. Required by the target's ruleset.
 
-Verdict: declined, not yet built. Issue #88 owes code scanning for the language
-chosen in #2, together with the requirement that findings are triaged rather
-than accumulated.
+Verdict: adopted. In force here in `.github/workflows/codeql.yml`, and observed
+as a check rather than read out of the file:
+
+    gh api repos/iderex/bremsweg/commits/e970ae056de470d391a84fab7e83ffd938c2f230/check-runs?per_page=100 \
+      --jq '.check_runs[] | select(.app.slug=="github-advanced-security") | "\(.name)\t\(.conclusion)"'
+    CodeQL  success
+
+It is produced here by the same app as on the target and for the same reason: it
+is the results check over what the analyses uploaded, not a job. Both analyses
+reported nothing:
+
+    gh api "repos/iderex/bremsweg/code-scanning/analyses?ref=refs/pull/114/merge" \
+      --jq '.[] | select(.tool.name=="CodeQL") | "\(.category) results=\(.results_count) rules=\(.rules_count)"'
+    /language:rust results=0 rules=25
+    /language:actions results=0 rules=17
+
+So the triage register #88 asks for is empty rather than maintained, and it is
+empty because forty two rules found nothing in a tree that holds no physics. A
+first finding is the point at which that sentence has to be replaced by an
+acceptance written down, and not before.
 
 ### Analyze (csharp)
 
@@ -316,9 +340,22 @@ Runs the CodeQL analysis over the compiled application code. Required by the
 target's ruleset. The job's name is an expression, so one job in the file
 becomes three checks on a commit.
 
-Verdict: declined, not yet built. Issue #88 owes the equivalent analyser for the
-language this project is written in, and CodeQL does not support that language,
-so the mechanism will differ even though the property does not.
+Verdict: adapted. The property is the same and the language is not, so the
+counterpart here is `Analyze (rust)` in `.github/workflows/codeql.yml`.
+
+This entry previously said that CodeQL does not support the language this
+project is written in. That was wrong, and the correction is what made the
+adoption available. It was read rather than assumed:
+
+    gh api repos/iderex/bremsweg/code-scanning/default-setup --jq '{state, languages}'
+    {"state":"not-configured","languages":["actions","rust"]}
+
+`not-configured` is the automatic route, which this repository does not use; the
+language list is what the analyser reports it covers here either way.
+
+One difference remains and it is not about the language. The target compiles its
+application to analyse it, `autobuild`, and the analysis here runs with no build
+step. What that costs in coverage has not been measured.
 
 ### Analyze (javascript-typescript)
 
@@ -340,9 +377,18 @@ propose.
 Analyses the workflow files themselves for the classes CodeQL models. Not
 required by the target's ruleset.
 
-Verdict: declined, not yet built. The subject exists here, because this
-repository has five workflow files, and the property applies unchanged. Issue
-#88 is the owner.
+Verdict: adopted. In force here in `.github/workflows/codeql.yml`, job name
+`Analyze (actions)`, with the same build mode as the target and over this
+repository's own workflow files.
+
+The name is a literal here where it is a matrix entry there. That is deliberate
+and it is the reason this file had to read the target's check runs rather than
+its workflow files: a name generated from a matrix moves when the matrix does,
+and a protection rule requiring the old one then matches nothing while going on
+looking green.
+
+This overlaps `Audit workflows (zizmor)` and does not replace it. The two model
+different classes over the same files, and neither is evidence about the other.
 
 ### Enforce greppable invariants
 
@@ -356,6 +402,11 @@ project's own invariants, and names four of them: no physical constant defined
 outside the constants module, no floating point equality in a test outside the
 places that want one, no direct comparison against a table where the fitted
 model should be used, and no numeric literal of an atomic mass.
+
+None of those four has a subject in the tree yet, so this half of #88 did not
+move with the code scanning half and the issue stays open for it. A rule proved
+only against a fixture, with no real subject anywhere, reads afterwards exactly
+like a rule that holds.
 
 ### Deterministic PR-hygiene checks
 

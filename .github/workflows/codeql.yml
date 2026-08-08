@@ -1,0 +1,96 @@
+# Code scanning, the half of issue #88 that has a subject today.
+#
+# `docs/target-gate.md` records `CodeQL`, `Analyze (csharp)` and
+# `Analyze (actions)` on the target gate. The first two are the target's own
+# language and do not translate; the property does, and this is where it is
+# enforced here. Which languages the analyser covers on this repository was read
+# rather than assumed:
+#
+#     gh api repos/iderex/bremsweg/code-scanning/default-setup --jq '{state, languages}'
+#     {"state":"not-configured","languages":["actions","rust"]}
+#
+# So both the workflow files and the Rust the rest of this tree will be get an
+# analysis, and neither is here because it was convenient.
+#
+# The jobs are written out rather than generated from a matrix, and their names
+# are literals. A job name built from a matrix entry changes when the matrix
+# does, and a protection rule requiring the old name then matches nothing while
+# continuing to look green. That failure is the reason issue #16 exists and the
+# reason the enumeration in #86 had to read the target's check runs rather than
+# its workflow files. Two jobs and two fixed names cost a few duplicated lines
+# and are worth it.
+#
+# What this does not do is triage. A scanning tab with open findings and no
+# recorded acceptance is the state #88's first bullet exists against, so a
+# finding here is either fixed or written down as accepted, and the pull request
+# that introduced it says which.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Explicit deny-all at workflow level; each job grants only what it needs.
+permissions: {}
+
+# Cancel a superseded run on the same ref. This is an analysis, not a publish,
+# so a cancelled obsolete run costs nothing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actions:
+    name: Analyze (actions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write # upload the results into the code-scanning tab
+      contents: read # checkout the tree to analyse
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the token in .git/config.
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: actions
+          # Workflow YAML is read, not compiled.
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: "/language:actions"
+
+  rust:
+    name: Analyze (rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: rust
+          # The toolchain this tree pins is in rust-toolchain.toml and the
+          # extractor resolves it from there rather than from a version written
+          # into this file, so the two cannot drift.
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: "/language:rust"
