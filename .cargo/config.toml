@@ -1,5 +1,11 @@
 # Build settings that belong to the tree rather than to whoever is building it.
 
+# The gate is one verb. A contributor who has to remember three commands runs
+# two of them, and the workflow that will run this invokes the same verb rather
+# than repeating its steps, so there is one procedure and not two.
+[alias]
+gate = "run --quiet --package xtask --"
+
 # Two release builds of the same commit on this platform differed in nineteen
 # bytes without this line: the linker writes a timestamp into the PE header and
 # a fresh signature into the debug directory, and neither has anything to do

@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+description = "The gate. Runs every check that can run here and accounts for every check that cannot."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+# Empty, and it stays that way. The gate reads a directory, spawns processes and
+# prints, all of which the standard library does, and a dependency here would be
+# a dependency the gate itself has to be trusted about.
+[dependencies]
+
+[lints]
+workspace = true
