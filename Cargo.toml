@@ -5,6 +5,7 @@ members = [
     "crates/fit",
     "crates/cli",
     "crates/needs-hardware-network-or-time",
+    "xtask",
 ]
 
 # Shared by every crate in the workspace so a version, an edition or a minimum

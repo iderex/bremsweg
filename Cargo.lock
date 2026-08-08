@@ -23,3 +23,7 @@ dependencies = [
 [[package]]
 name = "bremsweg-needs-hardware-network-or-time"
 version = "0.0.0"
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
