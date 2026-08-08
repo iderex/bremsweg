@@ -1,0 +1,122 @@
+# Every action reference carries its version beside its hash.
+#
+# Issue #24 asks that every action in every workflow be pinned by commit hash
+# with its version in a comment, and that a check refuse one that is not. Half
+# of that was already refused and half was not. `zizmor` refuses a reference
+# with no hash, which was measured rather than quoted and is recorded in #24. A
+# hash with no version comment beside it passed every route in this tree.
+#
+# The failure that half prevents is a review failure rather than a supply chain
+# one, and it is quiet. `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`
+# tells a reader nothing about which release it is. A change bumping it shows two
+# forty character strings and nobody reviewing it can say what moved, so the
+# question that matters, whether the new hash is the release it claims to be,
+# stops being askable. The comment is the only thing in the diff that answers it.
+#
+# The near miss this is built around is not somebody pasting a tag. It is
+# somebody updating a hash and dropping the trailing comment while doing it,
+# which leaves a correctly pinned action and an unreviewable one.
+#
+# What this cannot do, and it is the larger half of the property: it reads the
+# comment and never the release the hash belongs to. A reference whose comment
+# names a version the hash does not point at passes here, and a stale comment is
+# worse than an absent one because it answers the reviewer's question wrongly.
+# Establishing that a hash is the release it claims needs the forge, which this
+# job does not ask. Nothing in this tree refuses it today.
+#
+# The scan is over the whole reference rather than only the comment, so the hash
+# half is refused here too. That is deliberate duplication of `zizmor`. The
+# refusal there comes from a default in somebody else's tool, which #24 records:
+# the message says `required by blanket policy`, nothing in this tree configures
+# it, and a change to that default changes what this repository refuses without
+# anything here moving. A first party check means the property survives that.
+#
+# The job name is a literal and is fixed. A name generated from a matrix entry
+# moves when the matrix does, and a protection rule requiring the old one then
+# matches nothing while continuing to look green, which is the failure #16
+# exists against. Changing the name here is a change that says what it is doing.
+name: action-pins
+
+on:
+  # Every branch and every pull request. The scan is a read of tracked text and
+  # costs seconds, and a workflow file added on a branch that never sees this
+  # job is the case it is for.
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Explicit deny-all at workflow level; the job below grants only what it needs.
+permissions: {}
+
+# Cancel a superseded run on the same ref. This reads the tree and publishes
+# nothing, so dropping an obsolete run costs nothing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-comment:
+    name: Action pins carry their version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # read the workflow files being scanned
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the token in .git/config.
+          persist-credentials: false
+
+      - name: Every action reference carries its version beside its hash
+        run: |
+          set -euo pipefail
+
+          # Every `uses:` key in the tracked workflow files. The pattern anchors
+          # on the indentation and the optional list dash that a key carries, so
+          # the word written inside a comment or a sentence of prose is not
+          # mistaken for one. This file's own header contains several.
+          list=$(mktemp)
+          rc=0
+          git grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:' \
+            -- '.github/workflows/*.yml' '.github/workflows/*.yaml' > "$list" || rc=$?
+
+          # git grep: 0 found something, 1 found nothing, anything else is the
+          # scanner failing. This job runs from an action reference, so a tree
+          # with none in it means the scan did not reach the files rather than
+          # that there was nothing to check. Both non-zero cases fail closed.
+          case "$rc" in
+            0) ;;
+            1)
+              echo "::error::No action reference was found under .github/workflows. This job is itself one, so an empty result means the scan did not reach the files rather than that the tree is clean."
+              exit 1
+              ;;
+            *)
+              echo "::error::Scanner error (git grep exit $rc). Failing closed rather than reading a broken scan as a clean tree."
+              exit 1
+              ;;
+          esac
+
+          # The required shape: a reference, a forty character lowercase hash,
+          # then a comment carrying a version number. The version may or may not
+          # be written with a leading v, and anything may follow it, because a
+          # pattern narrower than the releases people actually publish would
+          # refuse valid work.
+          shape='uses:[[:space:]]*[^[:space:]#]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]*v?[0-9]'
+
+          fail=0
+          while IFS= read -r key; do
+            if printf '%s\n' "$key" | grep -qE "$shape"; then
+              echo "ok    $key"
+            else
+              echo "FAIL  $key"
+              fail=1
+            fi
+          done < "$list"
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::An action reference above is missing its commit hash or the version comment beside it. Write it as owner/repo@<40 character hash> # v<version>, where the version is the release that hash belongs to. The reason this is refused is in the header of .github/workflows/action-pins.yml and the requirement is the third condition of issue #24."
+            exit 1
+          fi
+          echo "Every action reference carries a commit hash and the version beside it."
