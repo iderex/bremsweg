@@ -13,6 +13,12 @@
 //! Nothing lists them in a document, because a list in a document drifts
 //! against the code that decides it.
 
+// Named modules rather than one file. The hash is a general function, the
+// provenance check is about this repository, and they are read by different
+// people for different reasons.
+pub mod provenance;
+pub mod sha256;
+
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -33,6 +39,17 @@ pub enum Run {
     /// This is not a skip. A leg declared this way is named in every report, so
     /// the reader of a green run can see which checks that run did not make.
     Elsewhere { why: String, needs: String },
+    /// A check written in this tree, run in this process rather than spawned.
+    /// `check` returns the refusals it found, which are the failure.
+    ///
+    /// In process rather than as another command because the check is code this
+    /// repository owns and the gate is where it is meant to run. Spawning it
+    /// would mean a second binary whose absence would then be a leg that could
+    /// not run.
+    Inside {
+        check: fn(&Path) -> Result<(), String>,
+        root: PathBuf,
+    },
 }
 
 /// One check, with its name as the report prints it.
@@ -167,7 +184,7 @@ pub fn run(legs: &[Leg], exec: &mut dyn Execute) -> Report {
         // here, because nothing here was going to run it. Turning it into "not
         // attempted" after a local failure would say this run changed something
         // about a check it never touched.
-        if let (Some(name), Run::Here { .. }) = (&stopped_at, &leg.run) {
+        if let (Some(name), Run::Here { .. } | Run::Inside { .. }) = (&stopped_at, &leg.run) {
             rows.push(Row {
                 name: leg.name.clone(),
                 outcome: Outcome::NotAttempted(format!("the run stopped when {name} failed")),
@@ -177,6 +194,13 @@ pub fn run(legs: &[Leg], exec: &mut dyn Execute) -> Report {
 
         let outcome = match &leg.run {
             Run::Elsewhere { why, needs } => Outcome::Elsewhere(why.clone(), needs.clone()),
+            Run::Inside { check, root } => match check(root) {
+                Ok(()) => Outcome::Ran,
+                Err(refusals) => {
+                    stopped_at = Some(leg.name.clone());
+                    Outcome::Failed(refusals)
+                }
+            },
             Run::Here {
                 probe,
                 command,
@@ -221,6 +245,13 @@ pub fn legs(repo_root: &Path, cargo: &OsStr) -> Vec<Leg> {
                 probe: argv(cargo, &["fmt", "--version"]),
                 command: argv(cargo, &["fmt", "--all", "--check"]),
                 needs: "the rustfmt component, which `rust-toolchain.toml` asks for".to_string(),
+            },
+        },
+        Leg {
+            name: "data provenance".to_string(),
+            run: Run::Inside {
+                check: provenance::as_a_leg,
+                root: repo_root.to_path_buf(),
             },
         },
         Leg {
@@ -570,5 +601,24 @@ mod tests {
 
         assert!(matches!(failed.rows[0].outcome, Outcome::Failed(_)));
         assert!(matches!(absent.rows[0].outcome, Outcome::ToolMissing(_)));
+    }
+
+    #[test]
+    fn a_check_written_here_that_refuses_fails_the_run() {
+        let declaration = vec![Leg {
+            name: "a check written here".to_string(),
+            run: Run::Inside {
+                check: |_root| Err("two refusals\nand a second one".to_string()),
+                root: std::path::PathBuf::from("."),
+            },
+        }];
+        let report = run(&declaration, &mut AnswersEverythingExcept::nothing_wrong());
+        let printed = report.render();
+
+        assert_ne!(report.exit_code(), 0, "a refusal passed:\n{printed}");
+        assert!(
+            printed.contains("two refusals"),
+            "the refusals were not printed:\n{printed}"
+        );
     }
 }
