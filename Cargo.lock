@@ -19,3 +19,7 @@ version = "0.0.0"
 dependencies = [
  "bremsweg-core",
 ]
+
+[[package]]
+name = "bremsweg-needs-hardware-network-or-time"
+version = "0.0.0"
