@@ -11,5 +11,11 @@ repository.workspace = true
 # here is one somebody argued for in an issue.
 [dependencies]
 
+# The fetch this harness makes a live request for. It is a development
+# dependency because only a test uses it: nothing this crate ships calls it, and
+# the crate itself stays empty of anything but the requirement machinery.
+[dev-dependencies]
+bremsweg-fit = { path = "../fit" }
+
 [lints]
 workspace = true
