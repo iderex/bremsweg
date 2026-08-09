@@ -1,12 +1,15 @@
 # The gate, run somewhere other than the machine of the person who wrote the
-# change.
+# change, and the coverage measurement that runs beside it.
 #
-# The whole of this file is a place for the gate to run. `cargo gate` decides
-# which checks exist and in what order, and it is the same verb a contributor
-# runs before pushing, so there is one procedure and not two. Deleting this file
-# would remove a second place the checks run and would not remove a single
-# check, which is the property issue #16 asks for and the reason no step below
-# names a check.
+# The first job is a place for the gate to run and nothing else. `cargo gate`
+# decides which checks exist and in what order, and it is the same verb a
+# contributor runs before pushing, so there is one procedure and not two.
+# Deleting this file would remove a second place the checks run and would not
+# remove a single check, which is the property issue #16 asks for and the reason
+# no step in that job names a check.
+#
+# The second job measures coverage and decides nothing. Its own comment says why
+# it is here rather than a leg of the verb, and why it cannot fail a change.
 #
 # The temptation this refuses is a job that calls `cargo fmt --check`,
 # `cargo clippy` and `cargo test` directly. It would be green today and it would
@@ -82,3 +85,139 @@ jobs:
         # renders: every leg that ran, every leg that did not, and what running
         # the ones that did not would need.
         run: cargo gate
+
+  # Coverage is a measurement and it is not a check, which is why it is a second
+  # job here rather than a leg of `cargo gate`. Every leg of that command can
+  # fail the run; a number that can never fail the run is not one of them, and
+  # putting it there would make the verb's own promise ambiguous.
+  #
+  # It is in this file because it belongs to the gate run: it reads the same
+  # tree on the same events, and a measurement that lives somewhere else is one
+  # nobody sees next to the verdict it qualifies. The job name below is a
+  # literal for the same reason the gate's is.
+  #
+  # Set as a target, coverage produces tests that execute lines and assert
+  # nothing, which is worse than the gap it closed because it hides the gap. So
+  # this job publishes a number and refuses nothing. It goes red only when the
+  # measurement could not be made, because a measurement that silently reported
+  # zero would be read as a tree with no tests.
+  coverage:
+    name: Coverage, measured and not gated
+    runs-on: ubuntu-latest
+    # Twice the gate's, because instrumenting the workspace means building it a
+    # second time under different flags rather than reusing the gate's artefacts.
+    timeout-minutes: 40
+    permissions:
+      contents: read # checkout the tree the measurement reads
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the token in .git/config.
+          persist-credentials: false
+
+      - name: Install the toolchain the tree pins
+        run: rustup toolchain install
+
+      - name: Add the instrumentation tools from the same toolchain
+        # `llvm-tools` ships with the channel `rust-toolchain.toml` already
+        # names, so this adds no tool from outside the toolchain and no third
+        # party action. It is asked for here rather than written into
+        # `rust-toolchain.toml` because only this job needs it, and a component
+        # added there would be downloaded by every clone for a measurement none
+        # of them makes.
+        run: rustup component add llvm-tools
+
+      - name: Measure
+        env:
+          # Source based coverage, which the compiler in the pinned channel
+          # carries. Nothing else instruments the build.
+          RUSTFLAGS: -C instrument-coverage
+          # One file per process and per binary, so a test binary that forks
+          # does not overwrite its own profile.
+          LLVM_PROFILE_FILE: ${{ github.workspace }}/coverage/%p-%m.profraw
+        run: |
+          set -euo pipefail
+
+          # Fail closed on a broken measurement. Every path below that cannot
+          # produce a number exits non-zero with the reason, because a summary
+          # reading zero percent and a summary that could not be produced are
+          # the same picture to a reader and the opposite fact.
+          # A failing test does not fail this job. The gate is what judges the
+          # suite, and a measurement job that goes red for the gate's reason
+          # gives a reader two red lights for one fault and none for its own.
+          cargo test --workspace --no-fail-fast \
+            || echo "::warning::a test failed here; the gate is where that verdict belongs, and the numbers below cover the run that happened"
+
+          llvm_bin="$(dirname "$(rustc --print target-libdir)")/bin"
+          profdata=coverage/merged.profdata
+          "$llvm_bin/llvm-profdata" merge -sparse coverage/*.profraw -o "$profdata"
+
+          # The instrumented test binaries, taken from cargo's own message
+          # stream rather than from a guess at the file names under
+          # `target/debug/deps`. Same flags as the run above, so this resolves
+          # the binaries that were just built rather than building more.
+          objects=()
+          while read -r binary; do
+            objects+=(-object "$binary")
+          done < <(cargo test --workspace --no-run --message-format=json \
+                   | jq -r 'select(.profile.test == true) | .executable | select(. != null)')
+          if [ "${#objects[@]}" -eq 0 ]; then
+            echo "::error::no instrumented test binary was found, so no coverage was measured"
+            exit 1
+          fi
+
+          # One export over every object, filtered per crate afterwards. The
+          # filtering is done on the file list rather than by handing llvm-cov a
+          # directory, because `export` reads a positional argument as another
+          # object file and refuses a directory outright.
+          "$llvm_bin/llvm-cov" export --summary-only \
+            "${objects[@]}" --instr-profile="$profdata" > coverage/summary.json
+          if [ "$(jq '.data[0].files | length' coverage/summary.json)" -eq 0 ]; then
+            echo "::error::the coverage export named no source file, so nothing was measured"
+            exit 1
+          fi
+
+          # The three are reported apart because the same percentage means three
+          # different things. An uncovered line in the physics library is an
+          # untested number; in the command line it is usually an unexercised
+          # argument path; in the fit it is a branch of a parser. Summed into one
+          # figure they hide each other.
+          {
+            echo "## Coverage"
+            echo
+            echo "Measured, not gated. No threshold is enforced here and none is planned"
+            echo "at this stage: a percentage set as a pass condition is met by tests that"
+            echo "execute lines without asserting anything, which hides the gap it was"
+            echo "meant to close. What this number is for is the review, where a change"
+            echo "that adds a branch and covers none of it becomes something a reader can"
+            echo "see rather than guess at."
+            echo
+            echo "| Crate | Lines | Functions | Regions |"
+            echo "| --- | --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for crate in core cli fit; do
+            row=$(jq -r --arg dir "crates/$crate/src/" '
+              def part:
+                if .count == 0 then "no instrumented code"
+                else "\(.covered)/\(.count) (\((.covered * 1000 / .count | round) / 10)%)"
+                end;
+              def total(f): [.[] | f] | add // 0;
+              [ .data[0].files[] | select(.filename | contains($dir)) | .summary ] as $files
+              | { lines:     { covered: ($files | total(.lines.covered)),
+                               count:   ($files | total(.lines.count)) },
+                  functions: { covered: ($files | total(.functions.covered)),
+                               count:   ($files | total(.functions.count)) },
+                  regions:   { covered: ($files | total(.regions.covered)),
+                               count:   ($files | total(.regions.count)) } }
+              | "| \(.lines | part) | \(.functions | part) | \(.regions | part) |"
+            ' coverage/summary.json)
+            echo "| \`crates/$crate\` $row" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          # The per file table goes to the log rather than the summary. The
+          # summary answers what changed at a glance; the log is where somebody
+          # who wants the file names looks, and it is here so that answer needs
+          # no tool beyond this page either.
+          "$llvm_bin/llvm-cov" report "${objects[@]}" --instr-profile="$profdata"
