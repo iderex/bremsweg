@@ -8,6 +8,14 @@
 //!
 //! The crate holds no physics yet. What is here is a placeholder so that the
 //! next change modifies something instead of creating everything.
+//!
+//! `close` is here rather than in a crate of its own because this crate's
+//! dependency table is declared empty and `tests/dependencies.rs` refuses an
+//! entry in it, development entries included. A comparison the suite shares has
+//! to be reachable without one, and everything that has tests and floating
+//! point numbers already depends on this crate.
+
+pub mod close;
 
 /// Doubles `n`, saturating at the maximum rather than wrapping.
 ///
