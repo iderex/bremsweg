@@ -20,6 +20,11 @@ fn repo_root() -> PathBuf {
 
 /// Every workflow file in the tree, read here rather than taken from the gate,
 /// so the two answers are independent.
+#[expect(
+    clippy::expect_used,
+    reason = "a helper of a test, where a panic is how an unreadable tree is reported; \
+              the lint is for the long run, and this never runs in one"
+)]
 fn workflow_files(repo_root: &Path) -> Vec<String> {
     let directory = repo_root.join(".github").join("workflows");
     let entries = std::fs::read_dir(&directory)

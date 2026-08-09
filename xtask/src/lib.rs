@@ -118,7 +118,6 @@ impl Report {
 
         let mut out = String::new();
         for row in &self.rows {
-            let padding = " ".repeat(width - row.name.chars().count());
             let said = match &row.outcome {
                 Outcome::Ran => "ran, passed".to_string(),
                 Outcome::Failed(detail) => format!("ran, FAILED: {detail}"),
@@ -130,27 +129,27 @@ impl Report {
                 }
                 Outcome::NotAttempted(why) => format!("not attempted: {why}"),
             };
-            out.push_str(&format!("{}{padding}  {said}\n", row.name));
+            // Padded by the formatter rather than by subtracting one length
+            // from another. Both count characters, and the formatter cannot be
+            // handed a width smaller than the name it is padding.
+            out.push_str(&format!("{:<width$}  {said}\n", row.name));
         }
         out.push_str(&self.summary());
         out
     }
 
     fn summary(&self) -> String {
-        let mut ran = 0;
-        let mut failed = 0;
-        let mut missing = 0;
-        let mut elsewhere = 0;
-        let mut not_attempted = 0;
-        for row in &self.rows {
-            match row.outcome {
-                Outcome::Ran => ran += 1,
-                Outcome::Failed(_) => failed += 1,
-                Outcome::ToolMissing(_) => missing += 1,
-                Outcome::Elsewhere(_, _) => elsewhere += 1,
-                Outcome::NotAttempted(_) => not_attempted += 1,
-            }
-        }
+        // Counted by the iterator rather than by five accumulators. A count of
+        // rows cannot exceed the number of rows, so the tally needs no addition
+        // and there is no width for one to overflow.
+        let how_many = |wanted: fn(&Outcome) -> bool| {
+            self.rows.iter().filter(|row| wanted(&row.outcome)).count()
+        };
+        let ran = how_many(|outcome| matches!(*outcome, Outcome::Ran));
+        let failed = how_many(|outcome| matches!(*outcome, Outcome::Failed(_)));
+        let missing = how_many(|outcome| matches!(*outcome, Outcome::ToolMissing(_)));
+        let elsewhere = how_many(|outcome| matches!(*outcome, Outcome::Elsewhere(_, _)));
+        let not_attempted = how_many(|outcome| matches!(*outcome, Outcome::NotAttempted(_)));
         format!(
             "\n{ran} ran, {failed} failed, {missing} could not run here, \
              {elsewhere} run elsewhere, {not_attempted} not attempted.\n"
@@ -258,17 +257,12 @@ pub fn legs(repo_root: &Path, cargo: &OsStr) -> Vec<Leg> {
             name: "lint".to_string(),
             run: Run::Here {
                 probe: argv(cargo, &["clippy", "--version"]),
-                command: argv(
-                    cargo,
-                    &[
-                        "clippy",
-                        "--workspace",
-                        "--all-targets",
-                        "--",
-                        "-D",
-                        "warnings",
-                    ],
-                ),
+                // No severity on this command line. Which lints are on and that
+                // a warning is a failure are both declared in `Cargo.toml`, so
+                // a contributor who runs the linter by hand gets the verdict
+                // this leg gets. A `-D` here would be a second authority, and
+                // the one it overrode would be the one in the tree.
+                command: argv(cargo, &["clippy", "--workspace", "--all-targets"]),
                 needs: "the clippy component, which `rust-toolchain.toml` asks for".to_string(),
             },
         },
@@ -345,10 +339,9 @@ fn workflow_name(path: &Path) -> Option<String> {
 }
 
 fn argv(program: &OsStr, rest: &[&str]) -> Vec<OsString> {
-    let mut argv = Vec::with_capacity(rest.len() + 1);
-    argv.push(program.to_os_string());
-    argv.extend(rest.iter().map(OsString::from));
-    argv
+    std::iter::once(program.to_os_string())
+        .chain(rest.iter().map(OsString::from))
+        .collect()
 }
 
 /// Runs the legs as real processes, from the repository root, so a leg's meaning

@@ -1,0 +1,14 @@
+# Configuration for the lints `Cargo.toml` turns on. The set is there; what is
+# here is the two exemptions that set would otherwise be wrong about.
+
+# `unwrap_used` and `expect_used` are on because a run of this program is hours
+# long and a value taken out of an empty `Option` that late is a failure after
+# the compute rather than before it. A test has neither property: it runs in
+# milliseconds, and a panic in it is how a broken fixture is reported. Denying
+# them in tests would buy nothing and would be paid for in suppressions.
+#
+# This reaches a function carrying `#[test]` and not a helper beside one, so a
+# helper that unwraps still has to say why at the site. That is a narrower
+# exemption than it looks and it is the one this tree wanted.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
