@@ -16,6 +16,7 @@
 // Named modules rather than one file. The hash is a general function, the
 // provenance check is about this repository, and they are read by different
 // people for different reasons.
+pub mod float_equality;
 pub mod provenance;
 pub mod sha256;
 
@@ -250,6 +251,13 @@ pub fn legs(repo_root: &Path, cargo: &OsStr) -> Vec<Leg> {
             name: "data provenance".to_string(),
             run: Run::Inside {
                 check: provenance::as_a_leg,
+                root: repo_root.to_path_buf(),
+            },
+        },
+        Leg {
+            name: "float equality".to_string(),
+            run: Run::Inside {
+                check: float_equality::as_a_leg,
                 root: repo_root.to_path_buf(),
             },
         },

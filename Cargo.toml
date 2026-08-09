@@ -57,6 +57,12 @@ arithmetic_side_effects = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 
+# Two floating point numbers compared for equality with an operator. The other
+# spelling, an equality assertion over them, is a macro this lint does not see
+# inside, and the gate leg named after it is what refuses that one. Both are
+# needed and neither covers the other.
+float_cmp = "deny"
+
 # A suppression says a lint is wrong here, which is a claim, and a claim with no
 # reason beside it cannot be reviewed or retired. This is the check behind the
 # rule that every suppression in the tree carries its reason at the point of

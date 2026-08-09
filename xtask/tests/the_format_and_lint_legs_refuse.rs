@@ -225,6 +225,35 @@ fn the_linter_accepts_the_same_conversion_decided() {
 }
 
 #[test]
+fn the_linter_refuses_two_floats_compared_with_an_operator() {
+    let verdict = ask_the_linter(&fixture("a_float_compared_with_an_operator.rs"));
+
+    assert!(
+        verdict.refused,
+        "two floating point numbers were compared for equality and it was \
+         accepted:\n{}",
+        verdict.said
+    );
+    assert!(
+        names_the_lint(&verdict.said, "float_cmp"),
+        "the refusal was for something other than the comparison:\n{}",
+        verdict.said
+    );
+}
+
+#[test]
+fn the_linter_accepts_the_same_question_asked_of_the_bits() {
+    let verdict = ask_the_linter(&fixture("a_float_compared_by_its_bits.rs"));
+
+    assert!(
+        !verdict.refused,
+        "the comparison of the bits was refused too, so the check above refuses a \
+         float rather than a comparison:\n{}",
+        verdict.said
+    );
+}
+
+#[test]
 fn the_linter_refuses_a_suppression_carrying_no_reason() {
     let verdict = ask_the_linter(&fixture("a_suppression_with_no_reason.rs"));
 
