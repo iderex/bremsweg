@@ -158,15 +158,36 @@ That last sentence is the checkable half of this decision, and it is checkable
 only because it is absolute: a factor in the core is a violation whatever its
 value, which a check can read, whereas whether a factor is correct is not.
 
-## What this record does not yet carry
+## The module, and what refuses a second copy
 
-The issue behind this record asks for one thing beyond the positions above: a
-check that refuses a numeric literal of a physical constant anywhere outside the
-one module.
+`crates/core/src/constants.rs` is the module. `xtask::physical_constants` is the
+leg of the gate that reads it and refuses a physical constant written anywhere
+else, so the rule above is enforced rather than asked for.
 
-Neither the module nor the check exists. `crates/core` holds a placeholder
-function and no physics, so there is no constant in the tree to be copied yet,
-and this record does not claim the rule is enforced. The natural home for the
-check is the linter for this project's own invariants in #88, and the command
-that would run it as a leg is #15. Until one of those lands, the rule above is
-prose and a second copy of a constant would pass every route in this tree.
+It reads a literal against the precision it was written to rather than against
+the module's digits one by one. A value carrying four significant digits is
+refused when it agrees with a constant to four, which reaches the copy that was
+rounded as well as the copy that was truncated; a digit by digit comparison
+would reach only the second, because the Bohr radius correctly rounded to four
+digits shares three of them with the module's literal. The magnitude is dropped
+before the comparison, so the same constant written in another unit is refused
+too.
+
+The leg fails closed in both directions. A constant declared with no source or
+no revision above it is refused where it is declared, and a tree with no module
+at all is refused rather than passed, because a leg that found nothing to
+compare against would otherwise go green having checked nothing.
+
+Three things it does not reach, and they are the residual rather than the whole.
+A value written to fewer than four significant digits cannot be told from an
+ordinary number, so it is not policed anywhere in the tree and a constant that
+short is refused at its declaration instead. A constant folded into another
+number before it was typed, or assembled by arithmetic from two others, is
+invisible to it. And it reads Rust sources only, so a value quoted in a document
+is prose about the module rather than a second definition of it, which is what
+lets this record quote one.
+
+What the module holds is small, because the physics has not landed. Each
+constant in it is one an accepted record already asks for, and a constant
+nothing accepted asks for is not added in advance. The set grows with the
+physics; what the leg holds is that it grows there and nowhere else.

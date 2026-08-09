@@ -26,8 +26,9 @@
 //! measurements. It is the ordinary `assert_eq!(stopping_power(e), 2.35)` that
 //! passes on the machine it was written on.
 
+use crate::source::{line_of, only_the_code, rust_files, shown};
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// The macros an equality assertion is spelled with.
 const ASSERTIONS: [&str; 4] = [
@@ -36,9 +37,6 @@ const ASSERTIONS: [&str; 4] = [
     "debug_assert_eq",
     "debug_assert_ne",
 ];
-
-/// Directories no check reads: the build output and git's own store.
-const NOT_SOURCE: [&str; 2] = ["target", ".git"];
 
 /// The one directory whose files exist in order to be refused. Every file in it
 /// is a fixture handed to a tool by a test, and none is a member of any target,
@@ -138,7 +136,7 @@ pub fn refusals_against(repo_root: &Path, register: &[Deliberate]) -> Vec<Refusa
     let mut refusals = Vec::new();
     let mut matched = vec![false; register.len()];
 
-    for path in sources(repo_root) {
+    for path in rust_files(repo_root) {
         let shown = shown(repo_root, &path);
         if shown.starts_with(FIXTURES) {
             continue;
@@ -182,38 +180,6 @@ fn excused(register: &[Deliberate], shown: &str, text: &str, line: usize) -> Opt
             && the_line.contains(declared.line_contains)
             && !declared.because.trim().is_empty()
     })
-}
-
-/// Every Rust file under the tree, sorted, so two runs report the same thing.
-fn sources(repo_root: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    walk(repo_root, &mut found);
-    found.sort();
-    found
-}
-
-fn walk(directory: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return;
-    };
-    for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
-        let name = path.file_name().unwrap_or_default().to_string_lossy();
-        if path.is_dir() {
-            if !NOT_SOURCE.contains(&name.as_ref()) {
-                walk(&path, found);
-            }
-        } else if path.extension().is_some_and(|it| it == "rs") {
-            found.push(path);
-        }
-    }
-}
-
-fn shown(repo_root: &Path, path: &Path) -> String {
-    path.strip_prefix(repo_root)
-        .unwrap_or(path)
-        .display()
-        .to_string()
-        .replace('\\', "/")
 }
 
 /// Every equality assertion in `text` whose arguments carry a floating point
@@ -371,104 +337,6 @@ fn carries_a_float(arguments: &str) -> bool {
         }
     }
     false
-}
-
-/// The text with every comment, string and character literal replaced by
-/// spaces, so a version number in a message is not read as a float and a
-/// commented out assertion is not read at all. Lengths and line breaks are
-/// preserved, so an offset into this text is an offset into the original.
-fn only_the_code(text: &str) -> String {
-    #[derive(Clone, Copy, PartialEq)]
-    enum In {
-        Code,
-        LineComment,
-        BlockComment,
-        Text(char),
-    }
-
-    let characters: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut state = In::Code;
-    let mut at = 0usize;
-
-    while let Some(here) = characters.get(at).copied() {
-        let next = characters.get(at.saturating_add(1)).copied();
-        let mut consumed = 1usize;
-        let keep = match state {
-            In::Code => match (here, next) {
-                ('/', Some('/')) => {
-                    state = In::LineComment;
-                    false
-                }
-                ('/', Some('*')) => {
-                    state = In::BlockComment;
-                    false
-                }
-                ('"', _) => {
-                    state = In::Text(here);
-                    false
-                }
-                // A quote that opens a character literal, and not a lifetime.
-                // `&'static str` is in this file and every other one, and
-                // reading it as a literal would swallow the code after it.
-                ('\'', Some('\\')) => {
-                    state = In::Text(here);
-                    false
-                }
-                ('\'', _) if characters.get(at.saturating_add(2)) == Some(&'\'') => {
-                    state = In::Text(here);
-                    false
-                }
-                _ => true,
-            },
-            In::LineComment => {
-                if here == '\n' {
-                    state = In::Code;
-                }
-                here == '\n'
-            }
-            In::BlockComment => {
-                if (here, next) == ('*', Some('/')) {
-                    state = In::Code;
-                    consumed = 2;
-                }
-                here == '\n'
-            }
-            In::Text(opener) => {
-                if here == '\\' {
-                    consumed = 2;
-                    false
-                } else {
-                    if here == opener {
-                        state = In::Code;
-                    }
-                    here == '\n'
-                }
-            }
-        };
-        for step in 0..consumed {
-            let Some(character) = characters.get(at.saturating_add(step)).copied() else {
-                break;
-            };
-            out.push(if keep && step == 0 {
-                character
-            } else if character == '\n' {
-                '\n'
-            } else {
-                ' '
-            });
-        }
-        at = at.saturating_add(consumed);
-    }
-    out
-}
-
-fn line_of(text: &str, at: usize) -> usize {
-    text.get(..at)
-        .unwrap_or_default()
-        .matches('\n')
-        .count()
-        .saturating_add(1)
 }
 
 fn one_line(text: &str) -> String {

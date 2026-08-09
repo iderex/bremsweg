@@ -9,6 +9,12 @@
 //! The crate holds no physics yet. What is here is a placeholder so that the
 //! next change modifies something instead of creating everything.
 //!
+//! `constants` is here because the physics that will use it is here, and
+//! because the rule in `0005` is that one module holds every physical constant
+//! and nothing else in the tree defines one. A module in a crate the transport
+//! does not depend on would be a module the transport would be tempted to copy
+//! from.
+//!
 //! `close` is here rather than in a crate of its own because this crate's
 //! dependency table is declared empty and `tests/dependencies.rs` refuses an
 //! entry in it, development entries included. A comparison the suite shares has
@@ -16,6 +22,7 @@
 //! point numbers already depends on this crate.
 
 pub mod close;
+pub mod constants;
 
 /// Doubles `n`, saturating at the maximum rather than wrapping.
 ///
