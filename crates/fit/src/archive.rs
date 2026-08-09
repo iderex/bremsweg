@@ -235,11 +235,19 @@ fn one_member(archive: &[u8], entry: usize) -> Result<(Member, usize), Problem> 
     )?;
     let bytes = match method {
         STORED => compressed.to_vec(),
-        DEFLATED => miniz_oxide::inflate::decompress_to_vec(compressed).map_err(|e| {
-            Problem::NotAValidStream {
-                name: name.clone(),
-                reason: e.to_string(),
-            }
+        // Bounded by the length the archive itself records. Unbounded, a
+        // member whose header claims a hundred bytes and whose stream expands
+        // to a gigabyte would be inflated in full and only then compared with
+        // the claim, so the refusal below would arrive after the allocation it
+        // exists to prevent. The bound makes the same mistake refusable before
+        // anything is held.
+        DEFLATED => miniz_oxide::inflate::decompress_to_vec_with_limit(
+            compressed,
+            usize::try_from(recorded_length).unwrap_or(usize::MAX),
+        )
+        .map_err(|e| Problem::NotAValidStream {
+            name: name.clone(),
+            reason: e.to_string(),
         })?,
         other => {
             return Err(Problem::UnreadableMethod {
@@ -442,6 +450,25 @@ mod tests {
                 method: 14,
             })
         );
+    }
+
+    /// A member whose header claims far less than its stream expands to. The
+    /// length comparison would catch it either way; what this is about is that
+    /// the refusal arrives before the bytes are held rather than after.
+    #[test]
+    fn a_member_expanding_past_the_length_it_claims_is_refused() {
+        let content = vec![b'x'; 200_000];
+        let mut archive = fixture::archive_of(&[("bomb.csv", content, true)]);
+        let directory = fixture::central_directory_starts_at(&archive);
+        // The uncompressed length in the central directory, cut to one byte.
+        for (offset, byte) in 1u32.to_le_bytes().iter().enumerate() {
+            archive[directory + 24 + offset] = *byte;
+        }
+
+        match members(&archive) {
+            Err(Problem::NotAValidStream { name, .. }) => assert_eq!(name, "bomb.csv"),
+            other => panic!("a member expanding past its claim was not refused: {other:?}"),
+        }
     }
 
     #[test]

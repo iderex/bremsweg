@@ -440,11 +440,30 @@ if a crasher was found. Runs on a weekly schedule and on manual dispatch, and
 never on a pull request, so it is not on the merge gate and is not required by
 the ruleset.
 
-Verdict: declined, not yet built. Issue #90 holds whether this is adopted with
-named targets or declined with a reason and the condition that reverses it, and
-its outcome replaces this line. What can be said today is that nothing here
-fuzzes anything, and that the parse surfaces the issue would name, the input
-document and the experimental data files, do not exist yet.
+Verdict: adapted. The property is adopted, that a surface reading bytes somebody
+else wrote is fed hostile ones and may not crash, and the mechanism differs. Two
+targets are named, `archive::members` and `compilation::counts`, and both are
+driven by a seeded mutation generator in
+`crates/needs-hardware-network-or-time/tests/parse_surfaces.rs` rather than by a
+coverage guided fuzzer. What that costs is that the generator does not search:
+it finds failures near valid input and it will not reach a state that takes a
+sequence of choices to arrive at.
+
+The reason for the difference is that a coverage guided fuzzer here means
+sanitizer flags, which the pinned channel refuses:
+
+    rustc +1.97.0 -Zsanitizer=address --version
+    error: the option `Z` is only accepted on the nightly compiler
+
+So adopting one adds a second toolchain to a tree that pins exactly one, in
+`rust-toolchain.toml`, and that is the cost weighed in #90 rather than here. The
+condition that would reverse the difference is written there too.
+
+Adopted here still means a check that runs and goes red rather than one that
+stops a merge, and this one is further from the target than that: it is not run
+on a change at all, it is asked for by hand, and the gate names it as a check the
+run did not make. The target's own job is on a weekly schedule and not on its
+merge gate either.
 
 ### Mutation testing, per scope
 
