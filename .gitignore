@@ -1,2 +1,22 @@
 # Build output. Cargo.lock is committed deliberately and is not ignored.
 /target
+
+# What the fetch writes into the data directory is not tracked.
+#
+# Whether the compilation may be redistributed inside this repository is the
+# third entry of issue #1 and is open, and `docs/data-terms.md` reads the terms
+# as unclear on exactly that with the conservative reading stated. So a clone
+# gets the tables by running `cargo fetch-compilation` rather than by cloning
+# them.
+#
+# The provenance records are ignored with the files they describe rather than
+# tracked beside them. A tracked record whose file is untracked is refused by
+# the gate in every fresh clone, which is the check working: a record and the
+# numbers it is about travel together or not at all.
+#
+# This is written here rather than as `data/.gitignore` because the gate
+# requires a provenance record for every file under `data/` and grants exactly
+# one exception, by path. A second file there would need a record describing
+# numbers it does not carry.
+/data/*
+!/data/README.md

@@ -6,6 +6,12 @@
 [alias]
 gate = "run --quiet --package xtask --"
 
+# Obtaining the measurements. One verb rather than a documented sequence, for
+# the same reason as the gate above: a command a contributor has to reconstruct
+# from a document is one that gets reconstructed differently each time. What it
+# fetches and where it writes is in `crates/fit/src/bin/fetch-compilation.rs`.
+fetch-compilation = "run --quiet --package bremsweg-fit --bin fetch-compilation --"
+
 # Two release builds of the same commit on this platform differed in nineteen
 # bytes without this line: the linker writes a timestamp into the PE header and
 # a fresh signature into the debug directory, and neither has anything to do

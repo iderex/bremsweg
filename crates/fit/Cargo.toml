@@ -9,5 +9,19 @@ repository.workspace = true
 [dependencies]
 bremsweg-core = { path = "../core" }
 
+# The first dependency this workspace has taken, and the argument for it is in
+# issue #26 and in the pull request that landed it. The short of it: the
+# compilation is published as a zip, its container is read in `src/archive.rs`
+# because it is fixed-width fields this tree can hold, and the DEFLATE stream
+# inside it is not, because an inflate that gets one bit wrong yields a number
+# rather than an error and this project exists against exactly that class of
+# failure. What makes the dependency safe is not trust in it: every member
+# carries a checksum and a length the publisher wrote, `src/archive.rs` checks
+# both, and bytes that do not match are refused rather than returned.
+#
+# Pinned to a patch version, and it pulls one further crate, `adler2`. Both are
+# pure Rust and neither performs input or output.
+miniz_oxide = "0.9.1"
+
 [lints]
 workspace = true
