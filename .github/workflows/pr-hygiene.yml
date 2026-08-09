@@ -1,0 +1,187 @@
+# The deterministic half of a pull request hygiene gate.
+#
+# It reads the title and the body of the change and refuses three things: a body
+# with nothing in it, a title that is one of a fixed set of placeholders, and a
+# change that references no issue anywhere in either. Nothing else.
+#
+# Deterministic is the whole of the adaptation, and it is a narrowing rather than
+# a convenience. A hygiene check that judges prose gives a different verdict to
+# two readers and to the same reader twice, and a gate that does that teaches
+# contributors to argue with it rather than to fix anything. Only the part a
+# machine decides the same way every time is taken.
+#
+# WHAT THIS CHECK DOES NOT DECIDE, and what no reading of a pull request could:
+#
+#   - whether the title describes the change. A title that is not on the
+#     placeholder list passes, however little it says.
+#   - whether the body says what changed and what failure it prevents. Any
+#     non-blank body passes.
+#   - whether the referenced issue exists, is open, or is the issue this change
+#     is actually about. The reference is matched as a shape and nothing looks
+#     it up.
+#   - whether the change is one topic. Two unrelated topics under one title
+#     pass here and are caught in review or not at all.
+#
+# Those four are the review's, and naming them here is what keeps a green tick
+# from being read as more than it is.
+#
+# First party and no third party action, the same posture as the sign-off gate
+# beside it. The judgement is a shell function in this file, and the fixtures
+# that prove it bites are run from the same function immediately before the real
+# change is judged, so a rule that stopped refusing reddens this job rather than
+# passing every change in silence.
+name: PR hygiene
+
+on:
+  # `edited` matters as much as `opened`: a body emptied after the check passed
+  # would otherwise keep the tick it earned when it was full.
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+# Nothing is checked out and nothing is read from the API. The event payload
+# carries the title and the body, so this job needs no permission at all.
+permissions: {}
+
+# Cancel a superseded run on the same pull request. Re-judging is cheap and the
+# verdict depends only on the metadata as it stands.
+concurrency:
+  group: pr-hygiene-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: Deterministic PR hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Judge the fixtures, then the change
+        # The title and the body arrive as environment values and are never
+        # interpolated into the script, so a title somebody wrote cannot be
+        # evaluated as shell.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          # The whole of the judgement. One line per refusal on stdout, nothing
+          # at all when the change passes. It reads its two arguments and no
+          # environment, so the fixtures below judge exactly what the change is
+          # judged by rather than a copy of it.
+          #
+          # No external command is called in here. That is not thrift: every
+          # `grep`, `tr` and `sed` is a second implementation of a pattern
+          # somebody has to keep in step with the one the fixtures exercise, and
+          # a shell builtin cannot be missing from the image the way a tool can.
+          refusals() {
+            local title=$1
+            local body=$2
+            local flattened
+            local -a words
+
+            if [ -z "${body//[[:space:]]/}" ]; then
+              echo "the body is empty"
+            fi
+
+            # An issue reference is a hash followed by digits, with something
+            # other than a letter, a digit or an underscore before it. The
+            # leading guard is what keeps a C sharp mention or a colour literal
+            # from counting as a reference to an issue.
+            if [[ ! ( "$title"$'\n'"$body" =~ (^|[^A-Za-z0-9_])#[0-9]+ ) ]]; then
+              echo "neither the title nor the body references an issue"
+            fi
+
+            # A fixed list rather than a length or a word count. A threshold on
+            # length refuses a short title that says everything and passes a long
+            # one that says nothing, and it is the kind of rule contributors
+            # learn to step over rather than to satisfy.
+            #
+            # `read -a` splits on whitespace and drops what is leading, trailing
+            # and repeated; joining on the first character of IFS puts it back
+            # with one space between words. So the list below is matched against
+            # the title flattened and lowercased, and a stray newline or a double
+            # space cannot walk a placeholder past it.
+            read -r -a words <<< "${title,,}"
+            flattened="${words[*]}"
+            case "$flattened" in
+              "" | wip | "wip "* | "wip:"* | "[wip]"* | update | updates | fix \
+              | fixes | change | changes | patch | test | tests | untitled \
+              | "no title" | title | "new pull request" | "my changes")
+                echo "the title is a placeholder: '$title'"
+                ;;
+            esac
+          }
+
+          # The fixtures. Each rule gets one change that must be refused for it
+          # and one neighbour that must pass, because a check that refuses
+          # everything and a check that refuses the right thing look identical
+          # from one side.
+          self_test=0
+
+          refused_for() {
+            local name=$1 title=$2 body=$3 wanted=$4 got
+            got=$(refusals "$title" "$body")
+            if [[ $got == *"$wanted"* ]]; then
+              echo "fixture ok    $name is refused for: $wanted"
+            else
+              echo "::error::fixture '$name' should have been refused for '$wanted' and got: ${got:-nothing}"
+              self_test=1
+            fi
+          }
+
+          passes() {
+            local name=$1 title=$2 body=$3 got
+            got=$(refusals "$title" "$body")
+            if [ -z "$got" ]; then
+              echo "fixture ok    $name passes"
+            else
+              echo "::error::fixture '$name' should have passed and was refused for: $got"
+              self_test=1
+            fi
+          }
+
+          # The title carries the reference here so that this fixture trips one
+          # rule and not two, and the body is whitespace rather than nothing at
+          # all, which is the shape somebody actually produces.
+          refused_for "an empty body" \
+            "Bound an inflate by the length it claims, closes #90" $'  \n\t\n ' \
+            "the body is empty"
+          passes "the same change with one line in the body" \
+            "Bound an inflate by the length it claims, closes #90" \
+            "What it prevents is a decompression bomb."
+
+          refused_for "no issue reference" \
+            "Bound an inflate by the length it claims" \
+            "What it prevents is a decompression bomb." \
+            "references an issue"
+          passes "the same body carrying one" \
+            "Bound an inflate by the length it claims" \
+            "Closes #90. What it prevents is a decompression bomb."
+
+          # The near miss for the reference rule. A hash inside a word is not a
+          # reference, and the one-character difference between this fixture and
+          # the one above it is the space before the hash.
+          refused_for "a hash that is part of a word" \
+            "Port the parser" "Rewritten from the C#7 original." \
+            "references an issue"
+
+          refused_for "a placeholder title" \
+            "WIP" "Closes #90. Half of the parser is here." \
+            "the title is a placeholder"
+          passes "a title that begins with a word on the list" \
+            "Fix the free flight path sampling" "Closes #51. The path was sampled from the wrong distribution."
+
+          if [ "$self_test" -ne 0 ]; then
+            echo "::error::The hygiene rules did not behave as their fixtures require, so this run judged nothing about the change itself."
+            exit 1
+          fi
+
+          # The change.
+          found=$(refusals "${PR_TITLE:-}" "${PR_BODY:-}")
+          if [ -n "$found" ]; then
+            while IFS= read -r line; do
+              echo "::error::$line"
+            done <<< "$found"
+            exit 1
+          fi
+          echo "The title and the body carry a non-placeholder title, a body, and an issue reference."
