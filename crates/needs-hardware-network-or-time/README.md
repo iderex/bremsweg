@@ -62,10 +62,14 @@ what the person starting it is willing to wait for. Both are therefore taken
 from the operator, and a test whose grant is absent is refused rather than run
 and rather than skipped.
 
-## What is missing
+## Where a reader is told this exists
 
-Issue #22 asks for one thing this harness cannot give itself. The gate command
-in #15 has to say, on every run that did not ask for this harness, that it was
-not asked for and what asking would need. That command does not exist yet, so
-today the ordinary run reports these tests only as an ignored count, and a
-reader who does not know this directory exists learns nothing from it.
+A harness nobody is told about is a harness nobody runs, and the ordinary suite
+reports these tests as an ignored count that says nothing about what they are
+for. So the gate names this directory on every run that did not ask for it, with
+what asking would need:
+
+    hardware, network and time harness  not run here: it is asked for by hand rather than on every change, because it builds the workspace twice. Running it here needs the run in `crates/needs-hardware-network-or-time/README.md`, which declares what that run may use
+
+That row points back at this file rather than restating what a run may use, so
+the two cannot come apart while one of them still tells a reader where to look.
