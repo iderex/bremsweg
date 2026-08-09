@@ -1,0 +1,84 @@
+# The gate, run somewhere other than the machine of the person who wrote the
+# change.
+#
+# The whole of this file is a place for the gate to run. `cargo gate` decides
+# which checks exist and in what order, and it is the same verb a contributor
+# runs before pushing, so there is one procedure and not two. Deleting this file
+# would remove a second place the checks run and would not remove a single
+# check, which is the property issue #16 asks for and the reason no step below
+# names a check.
+#
+# The temptation this refuses is a job that calls `cargo fmt --check`,
+# `cargo clippy` and `cargo test` directly. It would be green today and it would
+# make the automated route a second declaration of what the checks are, free to
+# drift from the one in the tree. Where the two disagree, the one that decides a
+# merge is this file, and the one a contributor reads is not.
+#
+# The job name is a literal and is fixed. A name generated from a matrix entry
+# moves when the matrix does, and a protection rule requiring the old one then
+# matches nothing while continuing to look green: the check disappears and the
+# branch keeps its tick. That failure is the reason this file is a separate
+# issue from the command it invokes. Changing the name below is a change that has
+# to say what it is doing and what rule it is breaking.
+#
+# The means is a workflow file, which the platform forces, and it is held to its
+# smallest surface for that reason: two actions, one of them checkout, one shell
+# line that installs the toolchain the tree names and one that runs the verb.
+#
+# What a green run here does not cover. The gate reports every check it did not
+# make, and on this runner that list includes the harness in
+# `crates/needs-hardware-network-or-time`, which builds the workspace twice and
+# is asked for by hand. So byte identity between two builds is not established by
+# this job and is not claimed by it. The runner is Linux and the byte identity
+# work in issue #24 was measured on the pinned Windows target alone, so this job
+# would not be where that property is checked even if it were asked for here.
+name: The gate, on the forge
+
+on:
+  # Every pull request, and the mainline itself so that what landed is checked
+  # where it landed rather than only where it was proposed.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Explicit deny-all at workflow level; the job below grants only what it needs.
+permissions: {}
+
+# Cancel a superseded run on the same ref. This reads the tree and publishes
+# nothing, so dropping an obsolete run costs nothing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: The gate
+    runs-on: ubuntu-latest
+    # The gate builds the workspace and runs its suite. Twenty minutes is well
+    # above what that costs on a tree this size and is here so a hung leg ends
+    # rather than holding a runner.
+    timeout-minutes: 20
+    permissions:
+      contents: read # checkout the tree the gate reads
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the token in .git/config.
+          persist-credentials: false
+
+      - name: Install the toolchain the tree pins
+        # No version here. `rustup toolchain install` with no toolchain named
+        # installs the one `rust-toolchain.toml` names, with the components it
+        # asks for, so the compiler this job uses and the compiler a contributor
+        # uses are decided in one place. A number written into this file would be
+        # a second place, and two numbers that are allowed to differ are two
+        # numbers nobody keeps in step.
+        run: rustup toolchain install
+
+      - name: Run the gate
+        # The whole of the work. What this prints is the report the command
+        # renders: every leg that ran, every leg that did not, and what running
+        # the ones that did not would need.
+        run: cargo gate
