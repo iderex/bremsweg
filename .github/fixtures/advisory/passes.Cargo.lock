@@ -1,0 +1,8 @@
+# The neighbour. Same shape, one crate, and no advisory against it, so a scan
+# that refuses everything is told apart from one that refuses the right thing.
+version = 3
+
+[[package]]
+name = "cfg-if"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"

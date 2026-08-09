@@ -1,0 +1,156 @@
+# What a build pulls in, and whether the lock file decided it.
+#
+# Two checks, and they are different questions about the same graph. The
+# advisory scan asks whether anything in the resolved set has an advisory filed
+# against it. The lock file check asks whether the set was resolved by the lock
+# file at all, because an advisory scan over a graph that was resolved freshly
+# is a scan of something nobody will build twice.
+#
+# This is the half of the supply chain work that only has a subject once there
+# is a build. Three guards on this tree already read the build environment
+# rather than the code, and they are named in `docs/target-gate.md` with what
+# each of them covers. What was missing until this file is the graph itself.
+#
+# The adaptation: this project's dependency surface is small and numeric rather
+# than large and web facing, so the checks that earn their place are the ones
+# about what a build pulls in and executes, and the ones about a lock file being
+# honoured. That is why the severity threshold below is no threshold at all.
+#
+# Each check is run against a fixture that trips it and a neighbour that does
+# not, before it is run against this tree. A check that refuses everything and a
+# check that refuses the right thing look identical from one side, and a green
+# run of an advisory scanner whose database failed to load looks like a clean
+# tree.
+name: Dependency graph integrity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  graph:
+    name: Dependency graph integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout the tree and the fixtures beside it
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the token in .git/config.
+          persist-credentials: false
+
+      - name: Install the toolchain the tree pins
+        run: rustup toolchain install
+
+      - name: Fetch the advisory scanner and refuse a different one
+        # A pinned, checksum verified binary rather than a third party action
+        # and rather than a build from source. The action would put the decision
+        # of what runs here in somebody else's repository; the build from source
+        # costs minutes on every change for a tool whose output does not depend
+        # on how it was compiled.
+        #
+        # The digest is the one the release carries, read from the release
+        # itself rather than computed here:
+        #
+        #     gh api repos/rustsec/rustsec/releases/tags/cargo-audit%2Fv0.22.2 \
+        #       --jq '.assets[] | select(.name | endswith("x86_64-unknown-linux-gnu-v0.22.2.tgz")) | .digest'
+        #     sha256:ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39
+        #
+        # So what the line below refuses is a download that is not the asset
+        # that release published. It does not establish who built that asset.
+        env:
+          AUDIT_URL: https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-gnu-v0.22.2.tgz
+          AUDIT_SHA256: ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -sSfL "$AUDIT_URL" -o "$RUNNER_TEMP/cargo-audit.tgz"
+          echo "$AUDIT_SHA256  $RUNNER_TEMP/cargo-audit.tgz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/audit"
+          tar -xzf "$RUNNER_TEMP/cargo-audit.tgz" -C "$RUNNER_TEMP/audit"
+          binary=$(find "$RUNNER_TEMP/audit" -type f -name cargo-audit | head -n 1)
+          if [ -z "$binary" ]; then
+            echo "::error::the archive carried no cargo-audit binary"
+            exit 1
+          fi
+          chmod +x "$binary"
+          echo "AUDIT=$binary" >> "$GITHUB_ENV"
+          "$binary" audit --version
+
+      - name: Scan the resolved graph for advisories
+        # The threshold is every advisory of kind vulnerability, with no floor
+        # on its severity, which is the scanner's own default and is stated here
+        # because a default nobody wrote down is not a decision.
+        #
+        # It is justified by the size of the surface rather than by strictness
+        # being free. This tree resolves a handful of crates, all of them
+        # numeric or compression, so a CVSS floor could only ever let something
+        # through and would save nothing. On a large graph the same setting
+        # would be a different argument.
+        #
+        # The informational kinds, which are unmaintained, unsound, notice and
+        # yanked, are printed and do not fail. They are not vulnerabilities, and
+        # a check that blocks a merge on an unmaintained notice is one people
+        # learn to route around, which costs the vulnerabilities too.
+        run: |
+          set -euo pipefail
+
+          # The fixture that must be refused. Run first, because a scanner whose
+          # database did not load refuses nothing and looks exactly like a clean
+          # tree from the other end.
+          if "$AUDIT" audit --file .github/fixtures/advisory/trips.Cargo.lock; then
+            echo "::error::the fixture carrying a known advisory was not refused, so this scan proves nothing about the tree"
+            exit 1
+          fi
+          echo "fixture ok    the lock file with an advisory against it is refused"
+
+          # The neighbour that must pass.
+          if ! "$AUDIT" audit --file .github/fixtures/advisory/passes.Cargo.lock; then
+            echo "::error::the fixture with no advisory against it was refused, so this scan refuses more than it should"
+            exit 1
+          fi
+          echo "fixture ok    the lock file with no advisory against it passes"
+
+          # The tree.
+          "$AUDIT" audit --file Cargo.lock
+
+      - name: Refuse a build that resolves outside the lock file
+        # `--locked` is the whole of it. It refuses before anything is fetched
+        # or built, so what this reports is the manifest and the lock file
+        # disagreeing rather than a build failing for some other reason.
+        #
+        # The fixtures are offline because they depend on a path rather than on
+        # the registry. A registry dependency would make the fixture's verdict
+        # depend on an index fetch, and a fixture that needs the network to say
+        # what it says goes red for a reason it is not about.
+        run: |
+          set -euo pipefail
+
+          if cargo metadata --locked --offline --format-version 1 \
+               --manifest-path .github/fixtures/lock-file/drifted/Cargo.toml > /dev/null 2>&1; then
+            echo "::error::the fixture whose lock file is missing a dependency it names was not refused"
+            exit 1
+          fi
+          echo "fixture ok    a manifest naming a dependency its lock file lacks is refused"
+
+          if ! cargo metadata --locked --offline --format-version 1 \
+                 --manifest-path .github/fixtures/lock-file/honoured/Cargo.toml > /dev/null; then
+            echo "::error::the neighbouring fixture whose lock file is complete was refused"
+            exit 1
+          fi
+          echo "fixture ok    the same manifest with a complete lock file passes"
+
+          # The tree. Not offline: its lock file names registry crates, and
+          # whether they can be resolved from what the lock says is part of what
+          # is being asked.
+          cargo metadata --locked --format-version 1 > /dev/null
+          echo "the workspace resolves entirely from its own lock file"

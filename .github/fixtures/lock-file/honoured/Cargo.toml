@@ -1,0 +1,11 @@
+# The neighbour that must pass. Identical to `drifted` except that its lock file
+# carries the dependency this manifest names.
+[package]
+name = "lock-fixture-honoured"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+lock-fixture-dependency = { path = "../dependency" }
+
+[workspace]

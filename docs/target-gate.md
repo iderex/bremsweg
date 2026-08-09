@@ -189,6 +189,22 @@ allowed set. Required by the target's ruleset.
 Verdict: adopted. In force here at `67f2053`, in
 `.github/workflows/dependency-review.yml`.
 
+Confirmed against a tree that has a build, which is what #87 asked for and what
+the entry above could not claim: at `67f2053` this repository resolved no
+dependency at all, so a green run of it said nothing. Observed on `2a5e81a`, a
+pull request head carrying the workspace and its lock file:
+
+    gh api repos/iderex/bremsweg/commits/2a5e81a/check-runs?per_page=100 \
+      --jq '.check_runs[] | "\(.name)\t\(.conclusion)"' | sort
+    ...
+    dependency-review        success
+    ...
+
+One line of reasoning for the adaptation, and it is a narrowing rather than a
+change of mechanism. This check reads what a change adds. What a change does not
+touch it never reads, so the resolved graph as a whole is a different question
+and is asked by `Dependency graph integrity` below.
+
 ### Reject Trojan Source Unicode
 
 `unicode-guard.yml`, job `bidi`. Refuses bidirectional overrides, isolates and
@@ -208,6 +224,19 @@ Verdict: adopted. In force here at `67f2053`, in `.github/workflows/zizmor.yml`.
 
 That it runs is observed above. That it bites has not been proved here, and
 issue #24 carries that gap rather than this file.
+
+Confirmed again on `daf0ffb`, the mainline head carrying the workspace, the lock
+file and three more workflow files than it read at `67f2053`:
+
+    gh api repos/iderex/bremsweg/commits/daf0ffb/check-runs?per_page=100 \
+      --jq '.check_runs[] | "\(.name)\t\(.conclusion)"' | sort
+    ...
+    Audit workflows (zizmor)   success
+    ...
+
+One line of reasoning: this check's subject is the workflow files, which grew
+rather than appeared with the build, so nothing about it needed adapting. It is
+recorded here because #87 asks for the run rather than the assumption.
 
 ### zizmor, from the code scanning app
 
@@ -229,6 +258,16 @@ pull request head.
 
 Verdict: adopted. In force here at `67f2053`, observed on the mainline head
 above.
+
+Confirmed on `daf0ffb`, in the same command as the zizmor entry, which is the
+mainline head carrying a build:
+
+    Scorecard analysis         success
+
+One line of reasoning: several of the things this scorecard reads, pinned
+dependencies among them, have a subject here only once a lock file exists, so a
+green result at `67f2053` and a green result now are not the same statement.
+What the score itself is was not read and is not claimed by this entry.
 
 ### build
 
@@ -621,8 +660,34 @@ an unexplained name.
 
 ## Issues in this milestone with no counterpart on the target
 
-Two, and naming them keeps the parity claim from being read in only one
+Three, and naming them keeps the parity claim from being read in only one
 direction.
+
+Issue #87, the two checks in `.github/workflows/dependency-integrity.yml`, job
+`graph`, check name `Dependency graph integrity`. The target reviews what a
+change adds to its dependency graph and has nothing that reads the resolved
+graph as a whole, because on a plugin the two questions collapse into one. Here
+they do not: a numeric library's graph is small, long lived and mostly untouched
+by any given change, so the check that reads only what changed reads almost
+nothing.
+
+The first of the two scans the resolved graph against the advisory database and
+fails on any advisory of kind vulnerability, with no floor on its severity. The
+threshold is stated in the file and the reason is the size of the surface rather
+than strictness being free: a handful of numeric and compression crates leaves a
+CVSS floor nothing to save and something to let through. The informational kinds
+are printed and do not fail.
+
+The second refuses a build that resolves outside the lock file, which is what
+makes the first one worth having. An advisory scan over a graph resolved freshly
+is a scan of something nobody will build twice.
+
+Each is run against a fixture that trips it and a neighbour that does not,
+before it is run against this tree, and the fixtures live in
+`.github/fixtures/`. What that costs is written where the advisory fixtures are:
+the database is somebody else's and it moves, so a fixture can go red for a
+reason it is not about. That is paid deliberately, because a stubbed database
+proves the scanner parses and nothing about whether it finds anything.
 
 Issue #93, no telemetry and a check that refuses an undeclared network call.
 The target has no equivalent, because a plugin that authenticates against remote

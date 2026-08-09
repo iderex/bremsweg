@@ -1,0 +1,8 @@
+# One half of the pair. It exists to be depended on and holds no code beyond
+# what makes it a crate.
+[package]
+name = "lock-fixture-dependency"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
