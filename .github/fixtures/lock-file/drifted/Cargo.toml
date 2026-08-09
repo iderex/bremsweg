@@ -1,0 +1,11 @@
+# The manifest that must be refused. It names a dependency its lock file does
+# not carry, which is the state a build resolving outside the lock arrives in.
+[package]
+name = "lock-fixture-drifted"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+lock-fixture-dependency = { path = "../dependency" }
+
+[workspace]

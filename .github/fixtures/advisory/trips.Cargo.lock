@@ -1,0 +1,11 @@
+# A fixture lock file. Not this repository's, and nothing resolves it.
+#
+# `time` 0.1.45 is the last release of that line and RUSTSEC-2020-0071 stands
+# against it with no patched version in the 0.1 series, so it is about as fixed
+# a point as a moving database offers.
+version = 3
+
+[[package]]
+name = "time"
+version = "0.1.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
