@@ -13,12 +13,14 @@
 //! Nothing lists them in a document, because a list in a document drifts
 //! against the code that decides it.
 
-// Named modules rather than one file. The hash is a general function, the
-// provenance check is about this repository, and they are read by different
-// people for different reasons.
+// Named modules rather than one file. The hash is a general function, reading
+// a source file is another, and each check is about one rule in this
+// repository, so they are read by different people for different reasons.
 pub mod float_equality;
+pub mod physical_constants;
 pub mod provenance;
 pub mod sha256;
+pub mod source;
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -258,6 +260,13 @@ pub fn legs(repo_root: &Path, cargo: &OsStr) -> Vec<Leg> {
             name: "float equality".to_string(),
             run: Run::Inside {
                 check: float_equality::as_a_leg,
+                root: repo_root.to_path_buf(),
+            },
+        },
+        Leg {
+            name: "physical constants".to_string(),
+            run: Run::Inside {
+                check: physical_constants::as_a_leg,
                 root: repo_root.to_path_buf(),
             },
         },
