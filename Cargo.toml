@@ -21,12 +21,44 @@ repository = "https://github.com/iderex/bremsweg"
 # No `license` field. The licence of this repository is undecided and is the
 # first entry in issue #1; a field here would answer it by accident.
 
+# The enabled set lives here and nowhere else. The gate's lint leg passes no
+# severity of its own, so somebody running the linter by hand gets the verdict
+# the gate gets, and a lint is turned on by editing this table rather than by
+# editing a command. Every member opts in with `[lints] workspace = true`.
 [workspace.lints.rust]
 unsafe_code = "forbid"
+# A warning nobody reads is a warning that is off. This is what makes the whole
+# set below fail closed rather than print.
+warnings = "deny"
 
 [workspace.lints.clippy]
 # The numeric core is where a silent conversion becomes a wrong answer that
 # looks like a right one, so the casts are denied rather than warned about.
+# `truncation` catches a wide value narrowed, `precision_loss` an integer wider
+# than a float's mantissa turned into one, `sign_loss` a negative value read as
+# large and positive, and `possible_wrap` the same in the other direction.
 cast_possible_truncation = "deny"
 cast_precision_loss = "deny"
 cast_sign_loss = "deny"
+cast_possible_wrap = "deny"
+
+# The other half of the arithmetic family: an integer operation that can
+# overflow, wrap or divide by zero. It does not reach floating point, which
+# neither panics nor wraps, so the physics this repository is for is untouched
+# by it and the counters, indices and bin numbers around that physics are not.
+# Where the bound is known and the compiler cannot see it, the site says so
+# rather than reaching for a wrapping operation that would hide it.
+arithmetic_side_effects = "deny"
+
+# A run of this program is hours long. A value taken out of an `Option` or a
+# `Result` without a decision about the empty case is a failure that arrives
+# after the compute rather than before it. Tests are exempt through
+# `clippy.toml`, where the reason is written.
+unwrap_used = "deny"
+expect_used = "deny"
+
+# A suppression says a lint is wrong here, which is a claim, and a claim with no
+# reason beside it cannot be reviewed or retired. This is the check behind the
+# rule that every suppression in the tree carries its reason at the point of
+# suppression.
+allow_attributes_without_reason = "deny"

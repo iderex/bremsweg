@@ -80,9 +80,13 @@ fn dependency_table(header: &str) -> Option<Option<String>> {
     const KINDS: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependencies"];
 
     let segments: Vec<&str> = header.split('.').map(str::trim).collect();
-    let at = segments.iter().position(|s| KINDS.contains(s))?;
+    // Walked rather than indexed. `position` followed by `at + 1` is an
+    // addition whose bound the reader has to check; stepping past the kind
+    // itself has none and says the same thing.
+    let mut after = segments.iter().skip_while(|s| !KINDS.contains(s));
+    after.next()?;
 
-    match segments.get(at + 1) {
+    match after.next() {
         None => Some(None),
         Some(named) => Some(Some(named.trim_matches('"').trim_matches('\'').to_owned())),
     }

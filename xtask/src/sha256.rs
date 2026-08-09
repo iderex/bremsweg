@@ -101,7 +101,9 @@ pub fn hex(bytes: &[u8]) -> String {
     while padded.len() % 64 != 56 {
         padded.push(0);
     }
-    let bit_length = (bytes.len() as u64) * 8;
+    // Wrapping because the standard defines this field modulo two to the
+    // sixty-four, not because an overflow here would be tolerable.
+    let bit_length = (bytes.len() as u64).wrapping_mul(8);
     padded.extend_from_slice(&bit_length.to_be_bytes());
 
     for block in padded.chunks_exact(64) {
@@ -109,6 +111,11 @@ pub fn hex(bytes: &[u8]) -> String {
         for (word, four) in schedule.iter_mut().zip(block.chunks_exact(4)) {
             *word = u32::from_be_bytes([four[0], four[1], four[2], four[3]]);
         }
+        #[expect(
+            clippy::arithmetic_side_effects,
+            reason = "index starts at sixteen and the largest step back is sixteen, so \
+                      every subtraction here is inside the array by construction"
+        )]
         for index in 16..64 {
             let a = schedule[index - 15];
             let b = schedule[index - 2];
