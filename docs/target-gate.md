@@ -414,10 +414,28 @@ like a rule that holds.
 metadata on open, edit, synchronize and reopen. Required by the target's
 ruleset.
 
-Verdict: declined, not yet built. Issue #89 owes the deterministic half of it,
-and the word deterministic is the whole of the adaptation: a hygiene check that
-judges prose is a judgement, and only the part that a machine can decide the
-same way twice is being taken.
+Verdict: adapted. `.github/workflows/pr-hygiene.yml`, job `hygiene`, check name
+`Deterministic PR hygiene`, on the same four event types. The word deterministic
+is the whole of the adaptation: a hygiene check that judges prose gives a
+different verdict to two readers and to the same reader twice, so only the part
+a machine decides identically every time is taken. Three rules, and the file
+names the four properties it does not decide so a green tick is not read as
+more than it is.
+
+What is narrower here than on the target is the rule set rather than the
+mechanism. The target's script is longer and this one refuses an empty body, a
+title on a fixed placeholder list, and a change referencing no issue anywhere in
+either field. It reads the event payload, holds no permission at all and calls
+no action, which is the sign-off gate's posture beside it.
+
+Each rule carries a fixture that trips it and a neighbour that does not, run
+from the same function immediately before the change is judged, so a rule that
+stopped refusing reddens the job rather than passing every change in silence.
+Deleting each of the three in turn was what established that, in #89.
+
+Adopted here still means a check that runs and goes red rather than one that
+stops a merge, for the reason under `## What is already in force here`: the
+ruleset on this repository requires no status check.
 
 ### prettier
 
