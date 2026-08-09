@@ -1,0 +1,128 @@
+# The ordinary suite, run where there is no display and where nothing can raise
+# its own privileges.
+#
+# Every test in this project runs without a display and without elevation. That
+# was a sentence in `crates/README.md` and nothing refused a violation of it, so
+# it lasted exactly as long as nobody found it easier to write a test the other
+# way. The first such test is fine on the machine it was written on and turns the
+# whole suite into something that only runs there.
+#
+# This job does not read the source looking for suspicious calls. That catches
+# what somebody thought of and misses the rest. It removes the two things instead
+# and runs the suite, so the property is what the suite does rather than what a
+# pattern found.
+#
+# WHAT REMOVES THEM, and why each is the smallest thing that does.
+#
+# `setpriv --no-new-privs` sets a flag the kernel keeps for the process and every
+# child of it, and while it is set a setuid binary confers nothing. That is what
+# takes `sudo` away from a test on a runner where it is otherwise there for the
+# asking. It needs no privilege to set and it cannot be unset, so nothing under
+# it can put back what it removed.
+#
+# `env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY` unsets the three variables
+# that name a display. The runner has no display server at all, and the fixture
+# below names the X socket directly rather than reading a variable, so what is
+# established is the absence of a display and not the absence of a name for one.
+#
+# WHAT IT DOES NOT REMOVE. The network is reachable from this job. Nothing here
+# establishes that a test in the ordinary suite makes no outbound connection, and
+# no green run of this job should be read as saying so; #93 is where that is
+# removed and refused. The hardware and network harness in
+# `crates/needs-hardware-network-or-time` is not run here either, and this job
+# says nothing about it.
+#
+# The means is a workflow file, which the platform forces for a job that runs
+# somewhere other than a contributor's machine, and it is held to one action and
+# three shell steps for that reason.
+name: Headless and unprivileged
+
+on:
+  # Every pull request, and the mainline itself, so that what landed is checked
+  # where it landed rather than only where it was proposed.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Explicit deny-all at workflow level; the job below grants only what it needs.
+permissions: {}
+
+# Cancel a superseded run on the same ref. This reads the tree and publishes
+# nothing, so dropping an obsolete run costs nothing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  headless:
+    name: Headless and unprivileged
+    runs-on: ubuntu-latest
+    # The same budget the gate job takes, because the same workspace is built
+    # and the same suite is run. It is here so a hung test ends rather than
+    # holding a runner.
+    timeout-minutes: 20
+    permissions:
+      contents: read # checkout the tree the suite reads
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the token in .git/config.
+          persist-credentials: false
+
+      - name: Install the toolchain the tree pins
+        # No version here. `rustup toolchain install` with no toolchain named
+        # installs the one `rust-toolchain.toml` names, so the compiler this job
+        # uses and the compiler a contributor uses are decided in one place.
+        run: rustup toolchain install
+
+      - name: Judge the fixtures, then the suite
+        run: |
+          set -euo pipefail
+
+          # The restriction, written once. Every command that has to run under
+          # it runs through this function, so the fixtures below are judged by
+          # exactly what the suite is judged by rather than by a copy of it.
+          restricted() {
+            setpriv --no-new-privs -- \
+              env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY "$@"
+          }
+
+          fixtures=.github/fixtures/headless
+          mkdir -p "$RUNNER_TEMP/headless"
+          for fixture in opens_a_display takes_elevation needs_neither; do
+            rustc --edition 2024 --test \
+              "$fixtures/a_test_that_$fixture.rs" \
+              -o "$RUNNER_TEMP/headless/$fixture"
+          done
+
+          # The near miss, and it is the pair of runs rather than either one. A
+          # test that raises its own privileges passes on this runner, where the
+          # command that does it is there for the asking. If it stopped passing
+          # here, the refusal below would be a test that fails everywhere and
+          # would say nothing about what the restriction removed.
+          echo "--- the elevation fixture, unrestricted, which must pass"
+          "$RUNNER_TEMP/headless/takes_elevation"
+
+          echo "--- the elevation fixture, restricted, which must be refused"
+          if restricted "$RUNNER_TEMP/headless/takes_elevation"; then
+            echo "::error::a test that raises its own privileges passed under the restriction, so the restriction removes nothing"
+            exit 1
+          fi
+
+          echo "--- the display fixture, restricted, which must be refused"
+          if restricted "$RUNNER_TEMP/headless/opens_a_display"; then
+            echo "::error::a test that opens a display passed, so there is a display here and this job establishes nothing about a headless one"
+            exit 1
+          fi
+
+          # The neighbour. Without it the two refusals above are satisfied by an
+          # environment that refuses everything.
+          echo "--- the fixture that needs neither, restricted, which must pass"
+          restricted "$RUNNER_TEMP/headless/needs_neither"
+
+          # The whole of the work. The suite is the ordinary one, run under the
+          # restriction the fixtures were just judged by.
+          echo "--- the ordinary suite, restricted"
+          restricted cargo test --workspace
