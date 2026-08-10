@@ -3,14 +3,34 @@
 # The gate is one verb. A contributor who has to remember three commands runs
 # two of them, and the workflow that will run this invokes the same verb rather
 # than repeating its steps, so there is one procedure and not two.
+#
+# `--locked` belongs on the alias rather than on the commands the gate runs, and
+# the difference is not a preference. An alias is itself a cargo invocation: it
+# resolves the workspace and writes Cargo.lock before the first leg starts. So a
+# manifest naming a dependency the committed lock file does not carry is
+# resolved by `cargo gate` itself, the lock file on disk is rewritten to match,
+# and every leg after that sees a tree whose lock file agrees with its manifests
+# no matter what was committed. A `--locked` on the leg commands would be a flag
+# that could never fire, and it was measured firing nothing before this line was
+# written here instead. Here it refuses before anything runs.
+#
+# The cost is that the refusal is cargo's rather than the gate's, so it arrives
+# as an error about the lock file and not as a row in the report. That is the
+# price of refusing at the only moment where refusing is still possible, and the
+# message names the lock file and the manifest, which is what the contributor
+# needs: run the build once without the flag, commit the lock file it writes.
 [alias]
-gate = "run --quiet --package xtask --"
+gate = "run --quiet --locked --package xtask --"
 
 # Obtaining the measurements. One verb rather than a documented sequence, for
 # the same reason as the gate above: a command a contributor has to reconstruct
 # from a document is one that gets reconstructed differently each time. What it
 # fetches and where it writes is in `crates/fit/src/bin/fetch-compilation.rs`.
-fetch-compilation = "run --quiet --package bremsweg-fit --bin fetch-compilation --"
+#
+# `--locked` here for the reason above and for one of its own: this alias
+# reaches the network, and a run that silently re-resolved the workspace first
+# would fetch measurements with a dependency set nobody committed.
+fetch-compilation = "run --quiet --locked --package bremsweg-fit --bin fetch-compilation --"
 
 # Two release builds of the same commit on this platform differed in nineteen
 # bytes without this line: the linker writes a timestamp into the PE header and
