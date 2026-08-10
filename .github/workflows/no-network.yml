@@ -15,11 +15,23 @@
 # WHAT REMOVES IT. `unshare --net` puts the process in a network namespace of its
 # own, which holds a loopback device and nothing else. No route leaves it, so a
 # connection to any address off the machine fails in the kernel before a packet
-# exists. `--user --map-root-user` is what lets an unprivileged runner create
-# that namespace, and it grants nothing outside it. Loopback is brought up
-# inside, so what the run path meets is a host that is offline rather than a host
-# whose networking is broken, and the two are different environments to a program
-# that opens a socket.
+# exists. Loopback is brought up inside, so what the run path meets is a host
+# that is offline rather than a host whose networking is broken, and the two are
+# different environments to a program that opens a socket.
+#
+# Creating that namespace needs the runner's own root, and the cost of that is
+# stated here rather than left in the command. The unprivileged route,
+# `unshare --user --map-root-user --net`, was tried first and this runner refuses
+# it: the namespace is created and the uid map is then denied, which is the
+# image's restriction on unprivileged user namespaces:
+#
+#     unshare: write failed /proc/self/uid_map: Operation not permitted
+#
+# So everything judged here runs as root, and what that costs is the one thing
+# this job could otherwise have said about privilege. It says nothing about it.
+# That the suite passes with no way to raise privileges is `headless.yml`, which
+# runs it under `--no-new-privs` and is a separate check for that reason. Neither
+# job's green run covers the other's property.
 #
 # WHAT DECIDES WHAT IS JUDGED. `.github/network-exceptions.md`, which names every
 # binary this workspace builds as either part of the run path or an exception
@@ -148,14 +160,22 @@ jobs:
           # this function, so the fixtures are judged by exactly what the run
           # path is judged by rather than by a copy of it.
           #
+          # The environment is carried across by name rather than by asking sudo
+          # to preserve it, because `env` is a command with arguments and needs
+          # no policy to allow it. The four named are what the toolchain resolves
+          # itself from; nothing else here reads the environment.
+          #
           # Loopback is brought up inside because a namespace leaves it down, and
           # a host that is offline and a host with no networking at all are
-          # different environments. Its failure is tolerated rather than fatal:
-          # nothing judged here needs loopback, and the property this job is
-          # about is what leaves the machine.
+          # different environments. It is fatal rather than tolerated, so a
+          # restriction that came up differently from the one described above
+          # fails here instead of quietly judging under something else.
           restricted() {
-            unshare --user --map-root-user --net -- \
-              sh -c 'ip link set lo up 2>/dev/null || true; exec "$@"' sh "$@"
+            sudo env "HOME=$HOME" "PATH=$PATH" \
+              "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}" \
+              "RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}" \
+              unshare --net -- \
+              sh -c 'ip link set lo up && exec "$@"' sh "$@"
           }
 
           # Whether the restriction can be created at all, before anything is
