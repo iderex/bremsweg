@@ -1,0 +1,243 @@
+# The run path, executed where there is no network to reach.
+#
+# `docs/decisions/0012` is the position: a calculation makes no outbound network
+# connection at all. Nothing refused a violation of it, so it lasted exactly as
+# long as nobody found a good reason to add one. The reason is never bad. It is
+# a crash reporter, or a check for a newer version, and the request carries a
+# platform and an address the other end can count.
+#
+# This job does not read the source looking for a networking library. That
+# catches what somebody thought of, and it misses the case the position is most
+# exposed to: a dependency several levels down that reaches out on its own. It
+# removes the network instead and runs the thing, so the property is what the
+# run path does rather than what a pattern found.
+#
+# WHAT REMOVES IT. `unshare --net` puts the process in a network namespace of its
+# own, which holds a loopback device and nothing else. No route leaves it, so a
+# connection to any address off the machine fails in the kernel before a packet
+# exists. `--user --map-root-user` is what lets an unprivileged runner create
+# that namespace, and it grants nothing outside it. Loopback is brought up
+# inside, so what the run path meets is a host that is offline rather than a host
+# whose networking is broken, and the two are different environments to a program
+# that opens a socket.
+#
+# WHAT DECIDES WHAT IS JUDGED. `.github/network-exceptions.md`, which names every
+# binary this workspace builds as either part of the run path or an exception
+# that may reach the network, with the reason it may. This job reads that file
+# and compares it against what the workspace actually builds, so a new binary
+# cannot acquire the network by arriving in a diff nobody read. An exception with
+# no reason and a name whose binary no longer exists are both refused, which is
+# the register failing closed in both directions rather than only the convenient
+# one.
+#
+# WHAT A GREEN RUN HERE DOES NOT COVER, and it is the larger half today. There is
+# no calculation in this tree. `bremsweg` prints a line saying so, and running it
+# with the network removed establishes that the line needs no network and nothing
+# further. When a calculation exists it is judged here by being run here, and
+# until then no green run of this job may be read as saying that a calculation
+# makes no connection. Issue #93 stays open on exactly that. The declared fetch
+# is not exercised either, and `.github/fixtures/no-network/README.md` says what
+# is done instead and why.
+#
+# The means is a workflow file and a shell script inside it, which the platform
+# forces for a job that has to run somewhere the network is present in order to
+# take it away. The fixtures are Rust compiled by the toolchain the tree already
+# pins, so nothing here adds a language, a runtime or a dependency.
+name: No network on the run path
+
+on:
+  # Every pull request, and the mainline itself, so that what landed is checked
+  # where it landed rather than only where it was proposed.
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Explicit deny-all at workflow level; the job below grants only what it needs.
+permissions: {}
+
+# Cancel a superseded run on the same ref. This reads the tree and publishes
+# nothing, so dropping an obsolete run costs nothing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-network:
+    name: No network on the run path
+    runs-on: ubuntu-latest
+    # The same budget the gate job takes, because the same workspace is built and
+    # the same suite is run. It is here so a hung test ends rather than holding a
+    # runner.
+    timeout-minutes: 20
+    permissions:
+      contents: read # checkout the tree this job reads
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the token in .git/config.
+          persist-credentials: false
+
+      - name: Install the toolchain the tree pins
+        # No version here. `rustup toolchain install` with no toolchain named
+        # installs the one `rust-toolchain.toml` names, so the compiler this job
+        # uses and the compiler a contributor uses are decided in one place.
+        run: rustup toolchain install
+
+      - name: Read the exception list against what the workspace builds
+        run: |
+          set -euo pipefail
+
+          exceptions=.github/network-exceptions.md
+          work="$RUNNER_TEMP/no-network"
+          mkdir -p "$work"
+
+          # What the file says. Two lists, sorted, so the comparisons below are
+          # set comparisons and not a reading order.
+          awk '/^Run-path: /{ print $2 }' "$exceptions" | sort > "$work/run-path"
+          awk '/^Allowed: /{ print $2 }' "$exceptions" | sort > "$work/allowed"
+          sort "$work/run-path" "$work/allowed" > "$work/named"
+
+          # What the workspace builds, from cargo rather than from a guess at the
+          # manifests. `--no-deps` keeps this to the crates in this tree, and
+          # `--locked` keeps a metadata call from rewriting the committed lock
+          # file the way any other cargo invocation would.
+          cargo metadata --format-version 1 --no-deps --locked \
+            | jq -r '.packages[].targets[] | select(any(.kind[]; . == "bin")) | .name' \
+            | sort > "$work/built"
+
+          echo "--- what the workspace builds"
+          cat "$work/built"
+          echo "--- what $exceptions names"
+          cat "$work/named"
+
+          undeclared="$(comm -23 "$work/built" "$work/named")"
+          if [ -n "$undeclared" ]; then
+            echo "::error::the workspace builds a binary $exceptions does not name, so nothing has said whether it may reach the network: $(echo "$undeclared" | tr '\n' ' ')"
+            exit 1
+          fi
+
+          dangling="$(comm -13 "$work/built" "$work/named")"
+          if [ -n "$dangling" ]; then
+            echo "::error::$exceptions names a binary this workspace does not build, so an exception has outlived what it was written for: $(echo "$dangling" | tr '\n' ' ')"
+            exit 1
+          fi
+
+          # Every exception carries its reason. The block for an entry runs to
+          # the next entry or to the end of the file, and it has to hold a
+          # `Reason:` line.
+          reasonless="$(awk '
+            function flush() { if (kind == "Allowed" && !reason) print name }
+            /^Run-path: |^Allowed: / { flush(); kind = substr($1, 1, length($1) - 1); name = $2; reason = 0; next }
+            /^Reason: / { reason = 1 }
+            END { flush() }
+          ' "$exceptions")"
+          if [ -n "$reasonless" ]; then
+            echo "::error::$exceptions allows a binary the network and gives no reason, and an exception nobody had to justify is the one that gets added: $(echo "$reasonless" | tr '\n' ' ')"
+            exit 1
+          fi
+
+          echo "the list and the workspace agree, and every exception carries a reason"
+
+      - name: Judge the fixtures, then the run path
+        run: |
+          set -euo pipefail
+
+          # The restriction, written once. Everything judged below goes through
+          # this function, so the fixtures are judged by exactly what the run
+          # path is judged by rather than by a copy of it.
+          #
+          # Loopback is brought up inside because a namespace leaves it down, and
+          # a host that is offline and a host with no networking at all are
+          # different environments. Its failure is tolerated rather than fatal:
+          # nothing judged here needs loopback, and the property this job is
+          # about is what leaves the machine.
+          restricted() {
+            unshare --user --map-root-user --net -- \
+              sh -c 'ip link set lo up 2>/dev/null || true; exec "$@"' sh "$@"
+          }
+
+          # Whether the restriction can be created at all, before anything is
+          # judged by it. A runner that refuses the namespace has to say so here
+          # rather than further down, where it would read as a fixture failing.
+          if ! restricted true; then
+            echo "::error::a network namespace could not be created on this runner, so nothing below was judged and this run establishes nothing"
+            exit 1
+          fi
+
+          fixtures=.github/fixtures/no-network
+          work="$RUNNER_TEMP/no-network"
+          mkdir -p "$work"
+          for fixture in \
+            a_program_that_checks_for_a_new_version \
+            a_program_that_reads_only_its_input \
+            a_server_the_version_check_can_reach
+          do
+            rustc --edition 2024 "$fixtures/$fixture.rs" -o "$work/$fixture"
+          done
+
+          # The address a connection off this machine would leave from, taken
+          # from the routing table. A documentation address is named rather than
+          # a real one: the lookup consults the table and sends nothing, and
+          # naming somebody's resolver here would read as a dependency on it.
+          address="$(ip -4 route get 192.0.2.1 \
+            | awk '{ for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1) }' \
+            | head -n 1)"
+          if [ -z "$address" ]; then
+            echo "::error::no routable address was found on this runner, so the reachable half of the pair of runs below could not be set up"
+            exit 1
+          fi
+          port=39237
+
+          rm -f "$work/ready"
+          "$work/a_server_the_version_check_can_reach" "0.0.0.0:$port" "$work/ready" &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 100); do
+            [ -e "$work/ready" ] && break
+            sleep 0.1
+          done
+          if [ ! -e "$work/ready" ]; then
+            echo "::error::the fixture server never came up on port $port, so neither half of the pair of runs below would mean anything"
+            exit 1
+          fi
+
+          # The pair of runs, and it is the pair rather than either one. The same
+          # program, contacting the same server. The only difference between the
+          # two is the restriction, so the refusal below is the restriction and
+          # not the program.
+          echo "--- the version check, unrestricted, which must pass"
+          "$work/a_program_that_checks_for_a_new_version" "$address:$port"
+
+          echo "--- the version check, with the network removed, which must be refused"
+          if restricted "$work/a_program_that_checks_for_a_new_version" "$address:$port"; then
+            echo "::error::a program that contacts a server while starting up succeeded with the network removed, so the removal removes nothing and every run below is green for no reason"
+            exit 1
+          fi
+
+          # The neighbour. Without it the refusal above is satisfied by an
+          # environment that refuses everything.
+          echo "--- the program that reads only its input, with the network removed, which must pass"
+          restricted "$work/a_program_that_reads_only_its_input" .github/network-exceptions.md
+
+          # Building is not the property, and it needs the registry on a cold
+          # cache, so it happens out here. What is judged is the running.
+          echo "--- building the workspace and its tests, outside the restriction"
+          cargo build --workspace --locked
+          cargo test --workspace --locked --no-run
+
+          # The ordinary suite. `--offline` so that a cargo that wanted the
+          # network would say so as itself rather than as a test failing for a
+          # reason nobody could read.
+          echo "--- the ordinary suite, with the network removed"
+          restricted cargo test --workspace --locked --offline
+
+          # Every binary the list puts on the run path, from the file the step
+          # above wrote after it had reconciled the list against the workspace.
+          # An exception is not run here, and being on that list is the whole of
+          # what exempts it.
+          while read -r binary; do
+            echo "--- $binary, with the network removed"
+            restricted "target/debug/$binary"
+          done < "$work/run-path"
