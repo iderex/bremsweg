@@ -73,3 +73,9 @@ read as saying that a calculation makes no connection. Issue #93 is where that i
 held open, and it stays open for exactly this reason.
 
 See [NOTICE.md](NOTICE.md) for the intended-use notice.
+
+## License
+
+AGPL-3.0, copyright 2026 Nils Lehnen.
+
+The full text is in [LICENSE](LICENSE).
